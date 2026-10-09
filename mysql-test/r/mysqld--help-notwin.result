@@ -484,6 +484,11 @@ The following options may be given as the first argument:
  PHYSICAL.
  --duckdb-force-no-collation 
  Disable push collation in DuckDB.
+ --duckdb-function-passthrough 
+ In a SELECT executed by DuckDB, accept a function name
+ that is not a MySQL function or stored function and pass
+ the call to DuckDB unchanged, e.g. a function from a
+ DuckDB extension.
  --duckdb-idempotent-data-import-enabled 
  Whether enable idempotent data import for DuckDB. When
  enabled, repeated imports of the same data (e.g., during
@@ -2019,6 +2024,7 @@ duckdb-dml-in-batch TRUE
 duckdb-enable-background-checkpoint FALSE
 duckdb-explain-output PHYSICAL_ONLY
 duckdb-force-no-collation FALSE
+duckdb-function-passthrough FALSE
 duckdb-idempotent-data-import-enabled FALSE
 duckdb-log-options 
 duckdb-max-temp-directory-size 0

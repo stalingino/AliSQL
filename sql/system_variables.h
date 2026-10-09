@@ -524,6 +524,8 @@ struct System_variables {
 
   bool duckdb_sql_normalization;
 
+  bool duckdb_function_passthrough;
+
   bool duckdb_copy_data_between_tables_use_ins_sel;
 
   ulonglong duckdb_max_threads_per_query;

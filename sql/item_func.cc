@@ -8164,14 +8164,24 @@ bool Item_func_sp::itemize(Parse_context *pc, Item **res) {
   lex->safe_to_cache_query = false;
 
   if (m_name->m_db.str == nullptr) {
-    if (thd->lex->copy_db_to(&m_name->m_db.str, &m_name->m_db.length)) {
+    if (lex->sphead == nullptr && thd->db().str == nullptr &&
+        thd->variables.duckdb_function_passthrough) {
+      /*
+        The statement may be executed by DuckDB, which is only known in
+        Sql_cmd_dml::prepare(). Decide in fix_fields().
+      */
+      m_no_default_db = true;
+      m_name->m_db = EMPTY_CSTR;
+    } else if (thd->lex->copy_db_to(&m_name->m_db.str,
+                                    &m_name->m_db.length)) {
       my_error(ER_NO_DB_ERROR, MYF(0));
       return true;
     }
   }
 
   m_name->init_qname(thd);
-  sp_add_own_used_routine(lex, thd, Sroutine_hash_entry::FUNCTION, m_name);
+  if (!m_no_default_db)
+    sp_add_own_used_routine(lex, thd, Sroutine_hash_entry::FUNCTION, m_name);
 
   return false;
 }
@@ -8291,8 +8301,20 @@ bool Item_func_sp::init_result_field(THD *thd) {
   @note called from Item::fix_fields.
 */
 
-bool Item_func_sp::resolve_type(THD *) {
+bool Item_func_sp::resolve_type(THD *thd) {
   DBUG_TRACE;
+
+  if (m_duckdb_passthrough) {
+    /*
+      The type is unknown until DuckDB runs the query. Rows are sent with the
+      types of the select list, and DuckDB values are converted to text for a
+      string column, so a nullable LONGTEXT fits any DuckDB result.
+    */
+    collation.set(thd->variables.collation_connection, DERIVATION_IMPLICIT);
+    set_data_type_string(ulonglong{MAX_BLOB_WIDTH});
+    set_nullable(true);
+    return false;
+  }
 
   assert(sp_result_field);
   set_data_type(sp_result_field->type());
@@ -8349,6 +8371,8 @@ String *Item_func_sp::val_str(String *str) {
 }
 
 bool Item_func_sp::val_json(Json_wrapper *result) {
+  if (m_duckdb_passthrough) return execute();
+
   if (sp_result_field->type() == MYSQL_TYPE_JSON) {
     if (execute()) return true;
 
@@ -8377,6 +8401,18 @@ bool Item_func_sp::execute() {
   THD *thd = current_thd;
 
   assert(!thd->lex->is_explain() || thd->lex->is_explain_analyze);
+
+  if (m_duckdb_passthrough) {
+    /* Only DuckDB can run this call; MySQL is not expected to evaluate it. */
+    char msg[NAME_LEN + 128];
+    snprintf(msg, sizeof(msg),
+             "Function %s exists only in DuckDB and cannot be evaluated by "
+             "MySQL",
+             func_name());
+    my_error(ER_DUCKDB_CLIENT, MYF(0), msg);
+    null_value = true;
+    return true;
+  }
 
   Internal_error_handler_holder<View_error_handler, Table_ref> view_handler(
       thd, context->view_error_handler, context->view_error_handler_arg);
@@ -8464,6 +8500,10 @@ error:
 
 void Item_func_sp::make_field(Send_field *tmp_field) {
   DBUG_TRACE;
+  if (m_duckdb_passthrough) {
+    Item_func::make_field(tmp_field);
+    return;
+  }
   assert(sp_result_field);
   sp_result_field->make_send_field(tmp_field);
   if (item_name.is_set()) tmp_field->col_name = item_name.ptr();
@@ -8472,6 +8512,7 @@ void Item_func_sp::make_field(Send_field *tmp_field) {
 Item_result Item_func_sp::result_type() const {
   DBUG_TRACE;
   DBUG_PRINT("info", ("m_sp = %p", (void *)m_sp));
+  if (m_duckdb_passthrough) return STRING_RESULT;
   assert(sp_result_field);
   return sp_result_field->result_type();
 }
@@ -8492,9 +8533,10 @@ longlong Item_func_found_rows::val_int() {
   return current_thd->found_rows();
 }
 
-Field *Item_func_sp::tmp_table_field(TABLE *) {
+Field *Item_func_sp::tmp_table_field(TABLE *t_arg) {
   DBUG_TRACE;
 
+  if (m_duckdb_passthrough) return Item_func::tmp_table_field(t_arg);
   assert(sp_result_field);
   return sp_result_field;
 }
@@ -8523,11 +8565,55 @@ bool Item_func_sp::sp_check_access(THD *thd) {
   return false;
 }
 
+/**
+  Whether this call is passed to DuckDB unchanged: duckdb_function_passthrough
+  is on, the statement is executed by DuckDB, the name is not qualified by a
+  database, and no stored function of that name exists.
+
+  Must be called after open_tables(), which caches the routines a statement
+  uses, and after Sql_cmd_dml::prepare() has decided the engine.
+*/
+bool Item_func_sp::is_duckdb_passthrough(THD *thd) {
+  if (!thd->variables.duckdb_function_passthrough ||
+      !thd->lex->use_duckdb_computation_engine || m_name->m_explicit_name ||
+      thd->lex->is_view_context_analysis())
+    return false;
+  /* A MySQL keyword used as a function name keeps its usual error. */
+  if (is_lex_native_function(&m_name->m_name)) return false;
+  if (m_no_default_db) return true;
+  return sp_find_routine(thd, enum_sp_type::FUNCTION, m_name,
+                         &thd->sp_func_cache, true) == nullptr;
+}
+
+/**
+  Resolve a call that DuckDB runs. There is no routine, so no EXECUTE
+  privilege applies: the name and arguments are printed into the query that
+  DuckDB executes.
+*/
+bool Item_func_sp::fix_duckdb_passthrough(THD *thd, Item **ref) {
+  m_duckdb_passthrough = true;
+  if (Item_func::fix_fields(thd, ref)) return true;
+
+  for (uint i = 0; i < arg_count; i++) {
+    if (args[i]->data_type() == MYSQL_TYPE_INVALID &&
+        args[i]->propagate_type(thd, MYSQL_TYPE_VARCHAR))
+      return true;
+  }
+  return false;
+}
+
 bool Item_func_sp::fix_fields(THD *thd, Item **ref) {
   Security_context *save_security_ctx = thd->security_context();
 
   DBUG_TRACE;
   assert(fixed == 0);
+
+  if (is_duckdb_passthrough(thd)) return fix_duckdb_passthrough(thd, ref);
+
+  if (m_no_default_db) {
+    my_error(ER_NO_DB_ERROR, MYF(0));
+    return true;
+  }
 
   /*
     Checking privileges to execute the function while creating view and

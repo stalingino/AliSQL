@@ -9,6 +9,7 @@
 | 参数 | 作用域 | 默认值 | 作用 |
 |------|--------|--------|------|
 | `duckdb_sql_normalization` | GLOBAL, SESSION | `OFF` | 将更多 MySQL SQL 转写为 DuckDB 兼容形式 |
+| `duckdb_function_passthrough` | GLOBAL, SESSION | `OFF` | 将仅存在于 DuckDB 的函数调用直接传给 DuckDB |
 | `duckdb_max_threads_per_query` | GLOBAL, SESSION | `1000000` | 限制单个用户查询的线程数 |
 | `duckdb_max_threads_per_query_rpl` | GLOBAL | `1000000` | 限制单个复制查询的线程数 |
 | `duckdb_psmt_cursor_send_extra_eof` | GLOBAL, SESSION | `ON` | 兼容旧版 JDBC Cursor 的 EOF 行为 |
@@ -57,6 +58,27 @@
 - **默认值**: `OFF`
 - **取值范围**: `ON` \| `OFF`
 - **含义**: 在查询发送给 DuckDB 前，转写受支持的 MySQL 语法和函数，包括跨库名称处理及 Prepared Statement reprepare。建议针对实际工作负载完成兼容性验证后按会话开启。
+
+### `duckdb_function_passthrough`
+
+- **参数范围**: 全局、会话参数
+- **修改形式**: 动态修改
+- **参数类型**: 布尔类型
+- **默认值**: `OFF`
+- **取值范围**: `ON` \| `OFF`
+- **含义**: 允许由 DuckDB 执行的 `SELECT` 调用仅存在于 DuckDB 的函数，例如没有 MySQL 对应函数的 DuckDB 内置函数、DuckDB 宏，或加载到 DuckDB 的扩展提供的函数。MySQL 在查询发送给 DuckDB 之前解析函数名，因此未开启该参数时，此类调用会报错 `FUNCTION db.name does not exist`。开启后，该调用被接受并原样发送给 DuckDB。
+
+  ```sql
+  SET duckdb_function_passthrough = ON;
+  SELECT id, levenshtein(a, b) FROM t1;   -- t1 为 DuckDB 表
+  ```
+
+  - 仅当语句是由 DuckDB 执行的 `SELECT`、函数名未带库名限定、且不存在同名的 MySQL 函数或存储函数时，调用才会直接传给 DuckDB。同名存储函数按原有方式解析。
+  - 由 MySQL 执行的语句（例如不读取 DuckDB 表的 `SELECT`）仍报错 `FUNCTION db.name does not exist`。开启该参数后，在没有默认数据库的会话中，未限定库名的函数名会在此时报 `No database selected`，而不是在解析语句时报错。
+  - 函数名和参数由 DuckDB 校验。DuckDB 中也不存在的函数会返回 DuckDB 错误。
+  - 不检查 `EXECUTE` 权限，因为不会执行任何 MySQL 存储程序。
+  - 结果列的 MySQL 类型为可为空的 `LONGTEXT`，DuckDB 返回的值以文本形式发送。
+  - `duckdb_sql_normalization` 开启或关闭时均可使用。
 
 ### `duckdb_max_threads_per_query`
 
