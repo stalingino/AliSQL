@@ -8,6 +8,7 @@
 | Variable | Scope | Default | Purpose |
 |----------|-------|---------|---------|
 | `duckdb_sql_normalization` | Global, Session | `OFF` | Rewrite additional MySQL SQL constructs for DuckDB |
+| `duckdb_function_passthrough` | Global, Session | `OFF` | Pass calls to functions that exist only in DuckDB through to DuckDB |
 | `duckdb_max_threads_per_query` | Global, Session | `1000000` | Limit threads used by one user query |
 | `duckdb_max_threads_per_query_rpl` | Global | `1000000` | Limit threads used by one replication query |
 | `duckdb_psmt_cursor_send_extra_eof` | Global, Session | `ON` | Preserve EOF behavior for older JDBC cursor clients |
@@ -26,6 +27,29 @@ All variables in this section are dynamic. Variables marked `Global, Session` ha
 - **Default**: `OFF`
 - **Valid values**: `ON` \| `OFF`
 - **Description**: Rewrites supported MySQL syntax and functions before sending a query to DuckDB. The normalization path includes cross-database name handling and prepared-statement reprepare support. Enable it per workload after compatibility testing.
+
+---
+
+## `duckdb_function_passthrough`
+
+- **Scope**: Global, Session
+- **Change type**: Dynamic
+- **Data type**: Boolean
+- **Default**: `OFF`
+- **Valid values**: `ON` \| `OFF`
+- **Description**: Lets a `SELECT` that DuckDB executes call a function that exists only in DuckDB, such as a DuckDB built-in with no MySQL counterpart, a DuckDB macro, or a function from an extension loaded into DuckDB. MySQL resolves function names before the query is sent to DuckDB, so without this variable such a call fails with `FUNCTION db.name does not exist`. With it, the call is accepted and sent to DuckDB unchanged.
+
+  ```sql
+  SET duckdb_function_passthrough = ON;
+  SELECT id, levenshtein(a, b) FROM t1;   -- t1 is a DuckDB table
+  ```
+
+  - A call is passed through only when the statement is a `SELECT` executed by DuckDB, the function name is not qualified by a database, and no MySQL function or stored function of that name exists. A stored function of the same name is resolved as before.
+  - A statement that MySQL executes, such as a `SELECT` without a DuckDB table, still fails with `FUNCTION db.name does not exist`. With the variable on, an unqualified name in a session without a default database is reported as `No database selected` at that point instead of when the statement is parsed.
+  - DuckDB checks the name and the arguments. A function that DuckDB does not have either fails with a DuckDB error.
+  - No `EXECUTE` privilege applies, because no MySQL routine runs.
+  - The result column has the MySQL type `LONGTEXT` and is nullable. DuckDB's value is sent as text.
+  - Works with `duckdb_sql_normalization` on or off.
 
 ---
 

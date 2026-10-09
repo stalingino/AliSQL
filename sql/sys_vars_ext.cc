@@ -306,6 +306,14 @@ static Sys_var_bool Sys_duckdb_sql_normalization(
     SESSION_VAR(duckdb_sql_normalization), CMD_LINE(OPT_ARG), DEFAULT(false),
     NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0));
 
+static Sys_var_bool Sys_duckdb_function_passthrough(
+    "duckdb_function_passthrough",
+    "In a SELECT executed by DuckDB, accept a function name that is not a "
+    "MySQL function or stored function and pass the call to DuckDB "
+    "unchanged, e.g. a function from a DuckDB extension.",
+    SESSION_VAR(duckdb_function_passthrough), CMD_LINE(OPT_ARG),
+    DEFAULT(false), NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0));
+
 static Sys_var_ulonglong Sys_duckdb_max_threads_per_query(
     "duckdb_max_threads_per_query", "Max threads for a single query.",
     SESSION_VAR(duckdb_max_threads_per_query), CMD_LINE(REQUIRED_ARG),

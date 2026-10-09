@@ -1,0 +1,132 @@
+#
+# duckdb_function_passthrough: a function that exists only in DuckDB (a
+# DuckDB built-in, macro or extension function) can be called in a SELECT
+# that DuckDB executes. levenshtein() is a DuckDB built-in with no MySQL
+# counterpart.
+#
+
+CREATE DATABASE passthrough_db;
+USE passthrough_db;
+CREATE TABLE t1 (id INT PRIMARY KEY, a VARCHAR(20), b VARCHAR(20)) ENGINE=DuckDB;
+INSERT INTO t1 VALUES (1, 'kitten', 'sitting'), (2, 'flaw', 'lawn');
+CREATE TABLE t_innodb (id INT PRIMARY KEY) ENGINE=InnoDB;
+INSERT INTO t_innodb VALUES (1);
+
+--echo #
+--echo # 1. Off by default: the name is a missing stored function, as before.
+--echo #
+SELECT @@global.duckdb_function_passthrough, @@session.duckdb_function_passthrough;
+--error ER_SP_DOES_NOT_EXIST
+SELECT levenshtein(a, b) FROM t1;
+
+SET duckdb_function_passthrough = ON;
+
+--echo #
+--echo # 2. Passed to DuckDB, without and with SQL normalization.
+--echo #
+SET duckdb_sql_normalization = OFF;
+SELECT id, levenshtein(a, b) AS d FROM t1 ORDER BY id;
+SET duckdb_sql_normalization = ON;
+SELECT id, levenshtein(a, b) AS d FROM t1 ORDER BY id;
+SELECT id FROM t1 WHERE levenshtein(a, b) > 2 ORDER BY id;
+SELECT CONCAT(a, ':', levenshtein(a, b)) AS c FROM t1 ORDER BY id;
+SELECT SUM(levenshtein(a, b)) AS total FROM t1;
+
+--echo #
+--echo # 3. Set operations, including one that materializes its result.
+--echo #
+SELECT levenshtein(a, b) AS d FROM t1 WHERE id = 1
+UNION ALL
+SELECT levenshtein(b, a) FROM t1 WHERE id = 2;
+SELECT levenshtein(a, b) AS d FROM t1 UNION SELECT levenshtein(b, a) FROM t1 ORDER BY d;
+
+--echo #
+--echo # 4. The result column is a nullable LONGTEXT: DuckDB decides the value.
+--echo #
+--enable_metadata
+SELECT levenshtein(a, b) AS d FROM t1 WHERE id = 1;
+--disable_metadata
+
+--echo #
+--echo # 5. A DuckDB macro, standing in for an extension function.
+--echo #
+CALL dbms_duckdb.query("CREATE TEMP MACRO pt_twice(x) AS x * 2");
+SELECT id, pt_twice(id) AS twice FROM t1 ORDER BY id;
+
+--echo #
+--echo # 6. Unknown to DuckDB as well: DuckDB reports it.
+--echo #
+--replace_regex /(Scalar Function with name no_such_function does not exist!)[\s\S]*/\1/
+--error ER_DUCKDB_CLIENT
+SELECT no_such_function(a) FROM t1;
+
+--echo #
+--echo # 7. Statements MySQL executes keep the usual error.
+--echo #
+--error ER_SP_DOES_NOT_EXIST
+SELECT levenshtein('kitten', 'sitting');
+--error ER_SP_DOES_NOT_EXIST
+SELECT levenshtein(id, id) FROM t_innodb;
+
+--echo #
+--echo # 8. A schema-qualified name is a stored function, as before.
+--echo #
+--error ER_SP_DOES_NOT_EXIST
+SELECT passthrough_db.levenshtein(a, b) FROM t1;
+
+--echo #
+--echo # 9. An existing stored function of that name is resolved as before.
+--echo #
+CREATE FUNCTION levenshtein(x VARCHAR(20), y VARCHAR(20)) RETURNS INT DETERMINISTIC RETURN 42;
+--error ER_SP_WRONG_NO_OF_ARGS
+SELECT levenshtein(a) FROM t1;
+DROP FUNCTION levenshtein;
+
+--echo #
+--echo # 10. Prepared statement with a parameter, executed twice.
+--echo #
+PREPARE s FROM 'SELECT id, levenshtein(a, ?) AS d FROM t1 ORDER BY id';
+SET @x = 'sitting';
+EXECUTE s USING @x;
+SET @x = 'lawn';
+EXECUTE s USING @x;
+DEALLOCATE PREPARE s;
+
+--echo #
+--echo # 11. An account with SELECT only: no EXECUTE privilege is needed.
+--echo #
+CREATE USER pt_reader@localhost;
+GRANT SELECT ON passthrough_db.t1 TO pt_reader@localhost;
+connect (con_reader, localhost, pt_reader,, passthrough_db);
+SET duckdb_function_passthrough = ON;
+SET duckdb_sql_normalization = ON;
+SELECT id, levenshtein(a, b) AS d FROM t1 ORDER BY id;
+disconnect con_reader;
+connection default;
+DROP USER pt_reader@localhost;
+
+--echo #
+--echo # 12. No default database.
+--echo #
+connect (con_nodb, localhost, root,, *NO-ONE*);
+SET duckdb_function_passthrough = ON;
+SET duckdb_sql_normalization = ON;
+SELECT id, levenshtein(a, b) AS d FROM passthrough_db.t1 ORDER BY id;
+--error ER_NO_DB_ERROR
+SELECT levenshtein('kitten', 'sitting');
+SET duckdb_function_passthrough = OFF;
+--error ER_NO_DB_ERROR
+SELECT levenshtein(a, b) FROM passthrough_db.t1;
+disconnect con_nodb;
+connection default;
+
+--echo #
+--echo # 13. Turned off again: as before.
+--echo #
+SET duckdb_function_passthrough = OFF;
+--error ER_SP_DOES_NOT_EXIST
+SELECT levenshtein(a, b) FROM t1;
+
+SET duckdb_sql_normalization = DEFAULT;
+SET duckdb_function_passthrough = DEFAULT;
+DROP DATABASE passthrough_db;
