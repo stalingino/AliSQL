@@ -28,6 +28,10 @@ permissions:
 env:
   # OpenSSL LTS release bundled in the tarballs.
   OPENSSL_VERSION: 3.5.9
+  # patchelf, which MySQL's CMake requires to bundle OpenSSL (OL7 has none; EPEL's 0.9 lacks
+  # --page-size, which CMake passes on aarch64). SHA-256 of the release's .tar.bz2.
+  PATCHELF_VERSION: 0.18.0
+  PATCHELF_SHA256: 1952b2a782ba576279c211ee942e341748fdb44997f704dd53def46cd055470b
   # DuckDB release vendored in extra/duckdb (src/storage/version_map.json). Bump with it.
   DUCKDB_VERSION: v1.4.4
 
@@ -64,6 +68,8 @@ jobs:
             -v "$GITHUB_WORKSPACE/out:/out" \
             -e SHORT_SHA="${SHORT_SHA:0:7}" \
             -e OPENSSL_VERSION \
+            -e PATCHELF_VERSION \
+            -e PATCHELF_SHA256 \
             -e DUCKDB_VERSION \
             oraclelinux:7 \
             bash -ex <<'INNER'
@@ -76,7 +82,7 @@ jobs:
           enabled=1
           gpgkey=https://yum.oracle.com/RPM-GPG-KEY-oracle-ol7
           REPO
-          yum install -y -q git wget which \
+          yum install -y -q git wget which bzip2 \
             devtoolset-10-gcc devtoolset-10-gcc-c++ devtoolset-10-binutils \
             openssl openssl-devel ncurses-devel libaio-devel perl-IPC-Cmd perl-Time-Piece bison \
             perl-Data-Dumper perl-Time-HiRes perl-JSON perl-Digest-MD5 perl-Env perl-Test-Simple
@@ -97,6 +103,12 @@ jobs:
           tar -xzf "${OSSL}.tar.gz"
           (cd "${OSSL}" && ./Configure --prefix=/opt/openssl --libdir=lib shared no-tests no-docs \
             && make -s -j"$(nproc)" && make -s install_sw)
+          PE="patchelf-${PATCHELF_VERSION}"
+          wget -q "https://github.com/NixOS/patchelf/releases/download/${PATCHELF_VERSION}/${PE}.tar.bz2"
+          echo "${PATCHELF_SHA256}  ${PE}.tar.bz2" | sha256sum -c -
+          tar -xjf "${PE}.tar.bz2"
+          (cd "${PE}" && ./configure -q --prefix=/usr/local && make -s -j"$(nproc)" && make -s install)
+          patchelf --version
 
           cd /AliSQL
           # Mark the build so SELECT VERSION() tells it apart from an upstream release.
