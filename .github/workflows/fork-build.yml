@@ -2,6 +2,16 @@
 # build-and-release.yml (oraclelinux:7, devtoolset-10, glibc 2.17), runs the
 # DuckDB test suite, and publishes the tarballs as a pre-release named after
 # the commit. The last five builds are kept.
+#
+# Two packaging fixes on top of upstream's recipe, both in this file only:
+# - OpenSSL is built from source and bundled in lib/private (WITH_SSL=<path>),
+#   as in MySQL's own glibc 2.17 tarballs. Linking the build image's system
+#   OpenSSL 1.0.2 made the binaries need libssl.so.10, which current
+#   distributions no longer ship. ncurses 5, which the mysql client needs, is
+#   bundled there too.
+# - The embedded DuckDB gets its real platform and version. Without them it
+#   reports platform '"linux"' and version v0.0.1, and refuses to load
+#   extensions built for linux_amd64 / linux_arm64.
 name: Build
 
 on:
@@ -14,6 +24,12 @@ on:
 
 permissions:
   contents: read
+
+env:
+  # OpenSSL LTS release bundled in the tarballs.
+  OPENSSL_VERSION: 3.5.9
+  # DuckDB release vendored in extra/duckdb (src/storage/version_map.json). Bump with it.
+  DUCKDB_VERSION: v1.4.4
 
 concurrency:
   group: build-master
@@ -47,6 +63,8 @@ jobs:
             -v "$GITHUB_WORKSPACE:/AliSQL" \
             -v "$GITHUB_WORKSPACE/out:/out" \
             -e SHORT_SHA="${SHORT_SHA:0:7}" \
+            -e OPENSSL_VERSION \
+            -e DUCKDB_VERSION \
             oraclelinux:7 \
             bash -ex <<'INNER'
 
@@ -60,7 +78,7 @@ jobs:
           REPO
           yum install -y -q git wget which \
             devtoolset-10-gcc devtoolset-10-gcc-c++ devtoolset-10-binutils \
-            openssl openssl-devel ncurses-devel libaio-devel perl-IPC-Cmd bison \
+            openssl openssl-devel ncurses-devel libaio-devel perl-IPC-Cmd perl-Time-Piece bison \
             perl-Data-Dumper perl-Time-HiRes perl-JSON perl-Digest-MD5 perl-Env perl-Test-Simple
 
           cd /opt
@@ -68,16 +86,48 @@ jobs:
           tar -xzf cmake-3.28.6-linux-*.tar.gz
           export PATH="/opt/cmake-3.28.6-linux-$(uname -m)/bin:$PATH"
 
+          set +u; source /opt/rh/devtoolset-10/enable; set -u
+
+          # OpenSSL to bundle, built with the same compiler and glibc as the server.
+          cd /tmp
+          OSSL="openssl-${OPENSSL_VERSION}"
+          wget -q "https://github.com/openssl/openssl/releases/download/${OSSL}/${OSSL}.tar.gz"
+          wget -q "https://github.com/openssl/openssl/releases/download/${OSSL}/${OSSL}.tar.gz.sha256"
+          echo "$(awk '{print $1}' "${OSSL}.tar.gz.sha256")  ${OSSL}.tar.gz" | sha256sum -c -
+          tar -xzf "${OSSL}.tar.gz"
+          (cd "${OSSL}" && ./Configure --prefix=/opt/openssl --libdir=lib shared no-tests no-docs \
+            && make -s -j"$(nproc)" && make -s install_sw)
+
           cd /AliSQL
           # Mark the build so SELECT VERSION() tells it apart from an upstream release.
           sed -i "s/^MYSQL_VERSION_EXTRA=.*/MYSQL_VERSION_EXTRA=-g${SHORT_SHA}/" MYSQL_VERSION
           # Same cap as upstream so the DuckDB build fits a hosted runner.
           export MAX_JOBS="$(nproc)"
           sed -i -E "s#(^[[:space:]]*cmake --build \\. --config Release -j) .+#\\1 ${MAX_JOBS}#" extra/duckdb/Makefile
+          # Link the OpenSSL built above: MySQL's CMake then installs it in lib/private and sets
+          # RPATH $ORIGIN/../lib/private on the binaries. build.sh has no option for it.
+          grep -q '^    -DMYSQL_SERVER_SUFFIX="$server_suffix"$' build.sh
+          sed -i 's#^    -DMYSQL_SERVER_SUFFIX="$server_suffix"$#&\n    -DWITH_SSL=/opt/openssl#' build.sh
+          grep -q '^    -DWITH_SSL=/opt/openssl$' build.sh
+          # extra/duckdb/Makefile passes these to DuckDB's CMake (DUCKDB_EXPLICIT_PLATFORM,
+          # OVERRIDE_GIT_DESCRIBE). The tree has no DuckDB git tags to derive them from.
+          case "$(uname -m)" in x86_64) DUCKDB_ARCH=amd64 ;; aarch64) DUCKDB_ARCH=arm64 ;; esac
+          export DUCKDB_PLATFORM="linux_${DUCKDB_ARCH}"
+          export OVERRIDE_GIT_DESCRIBE="${DUCKDB_VERSION}"
 
-          set +u; source /opt/rh/devtoolset-10/enable; set -u
           sh build.sh -t release -d /opt/alisql
           make install
+
+          # The mysql client links ncurses 5, which current distributions no longer ship.
+          cp -a /usr/lib64/libncurses.so.5* /usr/lib64/libtinfo.so.5* /opt/alisql/lib/private/
+
+          # The tarball must not depend on the build image's OpenSSL, and its binaries must
+          # find lib/private.
+          ls /opt/alisql/lib/private/libssl.so.3 /opt/alisql/lib/private/libcrypto.so.3
+          for bin in mysqld mysql mysqldump mysqladmin; do
+            if readelf -d "/opt/alisql/bin/$bin" | grep -E 'NEEDED.*lib(ssl|crypto)\.so\.10'; then exit 1; fi
+            readelf -d "/opt/alisql/bin/$bin" | grep -E 'R(UN)?PATH.*\$ORIGIN/\.\./lib/private'
+          done
 
           # mysqld refuses to run as root; the suite runs as an unprivileged user,
           # which also writes component configs next to the built plugins.
@@ -95,6 +145,23 @@ jobs:
             --max-test-fail=0 --testcase-timeout=15 --mysqld=--duckdb_memory_limit=2147483648 \
             '--skip-test=^(duckdb_config|system_timezone|duckdb_agg_func|list_partition|range_partition)$' \
             main.mysqld--help-notwin sys_vars.all_vars"
+
+          # The installed server's DuckDB reports the real platform and version.
+          cat >/tmp/duckdb-identity.sh <<'CHECK'
+          set -eux
+          D=$(mktemp -d)
+          M="/opt/alisql/bin/mysql -uroot -S $D/mysql.sock -N -e"
+          /opt/alisql/bin/mysqld --no-defaults --basedir=/opt/alisql --datadir="$D/data" --initialize-insecure
+          /opt/alisql/bin/mysqld --no-defaults --basedir=/opt/alisql --datadir="$D/data" --socket="$D/mysql.sock" \
+            --skip-networking --skip-mysqlx --duckdb_mode=ON --duckdb_memory_limit=2147483648 &
+          for i in $(seq 120); do /opt/alisql/bin/mysqladmin -uroot -S "$D/mysql.sock" ping && break; sleep 1; done
+          platform=$($M "CALL dbms_duckdb.query('PRAGMA platform')")
+          version=$($M "CALL dbms_duckdb.query('SELECT version()')")
+          echo "$platform" | grep -q "linux_$1"
+          echo "$version" | grep -q "$2"
+          /opt/alisql/bin/mysqladmin -uroot -S "$D/mysql.sock" shutdown
+          CHECK
+          su mtr -c "bash /tmp/duckdb-identity.sh ${DUCKDB_ARCH} ${DUCKDB_VERSION}"
 
           VER="8.0.44-g${SHORT_SHA}"
           PKG="alisql-${VER}-linux-glibc$(ldd --version | awk 'NR==1{print $NF}')-$(uname -m).tar.xz"
@@ -151,6 +218,7 @@ jobs:
             git log --format='- %h %s' "$UPSTREAM..HEAD"
             echo
             echo "Same toolchain as the upstream release build (oraclelinux:7, devtoolset-10, glibc 2.17)."
+            echo "OpenSSL ${OPENSSL_VERSION} and ncurses 5 are bundled in lib/private; DuckDB reports ${DUCKDB_VERSION}."
             echo "The DuckDB test suite passed on both architectures."
           } > "$NOTES"
 
