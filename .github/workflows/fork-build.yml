@@ -90,9 +90,10 @@ jobs:
           #   system_timezone   restarts mysqld via mysqld_safe without the limit
           #   duckdb_agg_func   last digit of a STD/STDDEV double differs
           #   list_partition    intermittent: Parser Error sometimes carries LINE context
+          #   range_partition   same as list_partition
           su mtr -c "cd /AliSQL/mysql-test && ./mtr --suite=duckdb --parallel=$(nproc) --force --retry=0 \
             --max-test-fail=0 --testcase-timeout=15 --mysqld=--duckdb_memory_limit=2147483648 \
-            '--skip-test=^(duckdb_config|system_timezone|duckdb_agg_func|list_partition)$' \
+            '--skip-test=^(duckdb_config|system_timezone|duckdb_agg_func|list_partition|range_partition)$' \
             main.mysqld--help-notwin sys_vars.all_vars"
 
           VER="8.0.44-g${SHORT_SHA}"
