@@ -438,7 +438,12 @@ Field *create_tmp_field(THD *thd, TABLE *table, Item *item, Item::Type type,
     }
       [[fallthrough]];
     case Item::FUNC_ITEM:
-      if (down_cast<Item_func *>(item)->functype() == Item_func::FUNC_SP) {
+      /*
+        A call passed to DuckDB (duckdb_function_passthrough) has no stored
+        function and no result field: it is handled like other functions.
+      */
+      if (down_cast<Item_func *>(item)->functype() == Item_func::FUNC_SP &&
+          down_cast<Item_func_sp *>(item)->get_sp_result_field() != nullptr) {
         Item_func_sp *item_func_sp = down_cast<Item_func_sp *>(item);
         Field *sp_result_field = item_func_sp->get_sp_result_field();
 

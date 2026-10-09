@@ -3789,10 +3789,24 @@ class Item_func_sp final : public Item_func {
   Field *sp_result_field{nullptr};
   /// true when function execution is deterministic
   bool m_deterministic{false};
+  /**
+    true when the name had no database and the session had no default
+    database at parse time. Only allowed with duckdb_function_passthrough;
+    fix_fields() raises ER_NO_DB_ERROR unless the call is passed to DuckDB.
+  */
+  bool m_no_default_db{false};
+  /**
+    true when the call is passed to DuckDB unchanged
+    (duckdb_function_passthrough): there is no stored function, and MySQL
+    never evaluates the call.
+  */
+  bool m_duckdb_passthrough{false};
 
   bool execute();
   bool execute_impl(THD *thd);
   bool init_result_field(THD *thd);
+  bool is_duckdb_passthrough(THD *thd);
+  bool fix_duckdb_passthrough(THD *thd, Item **ref);
 
  protected:
   bool is_expensive_processor(uchar *) override { return true; }

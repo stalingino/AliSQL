@@ -78,6 +78,8 @@ duckdb_explain_output
 duckdb_explain_output
 duckdb_force_no_collation
 duckdb_force_no_collation
+duckdb_function_passthrough
+duckdb_function_passthrough
 duckdb_idempotent_data_import_enabled
 duckdb_idempotent_data_import_enabled
 duckdb_log_options
