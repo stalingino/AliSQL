@@ -16,7 +16,8 @@ pw=$(sed -n 's/.*temporary password is generated for root@localhost: //p' /var/l
 /opt/alisql/bin/mysql -uroot -p"$pw" --connect-expired-password \
   -e "ALTER USER root@localhost IDENTIFIED BY 'smoke-test'"
 q() { /opt/alisql/bin/mysql -uroot -psmoke-test -N -e "$1"; }
-q "SELECT VERSION()" | grep -E '^8\.0\.[0-9]+-g[0-9a-f]{7}$'
+# 8.0.44-g<sha>, then the server suffix (-alisql-dev).
+q "SELECT VERSION()" | grep -E '^8\.0\.[0-9]+-g[0-9a-f]{7}(-|$)'
 q "CALL dbms_duckdb.query('PRAGMA platform')" | grep -E 'linux_(amd64|arm64)'
 q "CREATE DATABASE smoke; CREATE TABLE smoke.t (a INT PRIMARY KEY, b VARCHAR(8)) ENGINE=DuckDB;
    INSERT INTO smoke.t VALUES (1, 'x'), (2, 'y'); SELECT SUM(a) FROM smoke.t" | grep -x 3
