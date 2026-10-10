@@ -12,6 +12,10 @@
 # - The embedded DuckDB gets its real platform and version. Without them it
 #   reports platform '"linux"' and version v0.0.1, and refuses to load
 #   extensions built for linux_amd64 / linux_arm64.
+#
+# The x86_64 build is also published as an RPM made from the same tarball
+# (.github/rpm: /opt/alisql, systemd service alisql, config /etc/alisql/my.cnf),
+# smoke-tested on Oracle Linux 7 and 9.
 name: Build
 
 on:
@@ -47,6 +51,7 @@ jobs:
         include:
           - arch: x86_64
             runner: ubuntu-24.04
+            rpm: true
           - arch: aarch64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
@@ -60,9 +65,12 @@ jobs:
       - name: Build, test and package inside oraclelinux:7
         env:
           SHORT_SHA: ${{ github.sha }}
+          BUILD_RPM: ${{ matrix.rpm && 'yes' || 'no' }}
         run: |
           set -eux
           mkdir -p "$GITHUB_WORKSPACE/out"
+          # RPM release <commit date>.g<sha>: readable, and newer commits sort as upgrades.
+          RPM_RELEASE="$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y%m%d).g${SHORT_SHA:0:7}"
           docker run --rm -i \
             -v "$GITHUB_WORKSPACE:/AliSQL" \
             -v "$GITHUB_WORKSPACE/out:/out" \
@@ -71,6 +79,8 @@ jobs:
             -e PATCHELF_VERSION \
             -e PATCHELF_SHA256 \
             -e DUCKDB_VERSION \
+            -e BUILD_RPM \
+            -e RPM_RELEASE \
             oraclelinux:7 \
             bash -ex <<'INNER'
 
@@ -85,7 +95,8 @@ jobs:
           yum install -y -q git wget which bzip2 \
             devtoolset-10-gcc devtoolset-10-gcc-c++ devtoolset-10-binutils \
             openssl openssl-devel ncurses-devel libaio-devel perl-IPC-Cmd perl-Time-Piece bison \
-            perl-Data-Dumper perl-Time-HiRes perl-JSON perl-Digest-MD5 perl-Env perl-Test-Simple
+            perl-Data-Dumper perl-Time-HiRes perl-JSON perl-Digest-MD5 perl-Env perl-Test-Simple \
+            rpm-build
 
           cd /opt
           wget -q "https://github.com/Kitware/CMake/releases/download/v3.28.6/cmake-3.28.6-linux-$(uname -m).tar.gz"
@@ -191,12 +202,38 @@ jobs:
             --exclude='alisql/mysqlrouter-log-rotate' \
             alisql/
           ls -lh "/out/${PKG}"
+
+          # alisql-8.0.44-<yyyymmdd>.g<sha>.x86_64.rpm, built on EL7 so its rpm can install it too.
+          if [ "$BUILD_RPM" = yes ]; then
+            mkdir -p /tmp/rpm-src
+            cp /AliSQL/.github/rpm/* /tmp/rpm-src/
+            ln -s "/out/${PKG}" /tmp/rpm-src/
+            rpmbuild -bb /tmp/rpm-src/alisql.spec \
+              --define "_sourcedir /tmp/rpm-src" --define "_rpmdir /out" \
+              --define "_build_name_fmt %%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}.rpm" \
+              --define "alisql_version 8.0.44" --define "alisql_release ${RPM_RELEASE}" \
+              --define "alisql_tarball ${PKG}"
+            ls -lh /out/alisql-*.rpm
+          fi
           INNER
+
+      - name: Smoke-test the RPM on Oracle Linux 7 and 9
+        if: matrix.rpm
+        run: |
+          set -eux
+          RPM=$(cd "$GITHUB_WORKSPACE/out" && ls alisql-*.rpm)
+          for os in oraclelinux:7 oraclelinux:9; do
+            docker run --rm -v "$GITHUB_WORKSPACE/out:/rpm:ro" -v "$GITHUB_WORKSPACE/.github/rpm:/t:ro" \
+              "$os" sh /t/smoke-test.sh "/rpm/$RPM"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
           name: alisql-${{ matrix.arch }}
-          path: ${{ github.workspace }}/out/alisql-*.tar.xz
+          path: |
+            ${{ github.workspace }}/out/alisql-*.tar.xz
+            ${{ github.workspace }}/out/alisql-*.rpm
+          if-no-files-found: error
           retention-days: 7
 
   release:
@@ -232,11 +269,15 @@ jobs:
             echo "Same toolchain as the upstream release build (oraclelinux:7, devtoolset-10, glibc 2.17)."
             echo "OpenSSL ${OPENSSL_VERSION} and ncurses 5 are bundled in lib/private; DuckDB reports ${DUCKDB_VERSION}."
             echo "The DuckDB test suite passed on both architectures."
+            echo
+            echo "The x86_64 RPM holds the same tree in /opt/alisql, with the systemd service \`alisql\`,"
+            echo "configuration in /etc/alisql/my.cnf and data in /var/lib/alisql (EL7 or later; needs libaio)."
+            echo "On first start the root password is generated into /var/log/alisql/mysqld.log."
           } > "$NOTES"
 
           gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null || true
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --prerelease --title "AliSQL 8.0.44-g${SHORT}" --notes-file "$NOTES" artifacts/alisql-*.tar.xz
+            --prerelease --title "AliSQL 8.0.44-g${SHORT}" --notes-file "$NOTES" artifacts/alisql-*.tar.xz artifacts/alisql-*.rpm
 
           # Keep the five newest builds.
           gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
