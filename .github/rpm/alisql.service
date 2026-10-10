@@ -1,0 +1,25 @@
+[Unit]
+Description=AliSQL server
+Documentation=https://github.com/alibaba/AliSQL
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mysql
+Group=mysql
+# Creates the data directory on first start; the root password is then in /var/log/alisql/mysqld.log.
+ExecStartPre=/usr/libexec/alisql-prepare-db-dir
+# Extra server options, e.g. MYSQLD_OPTS="--skip-grant-tables" for recovery.
+EnvironmentFile=-/etc/sysconfig/alisql
+# Only this file: a distro MySQL's or MariaDB's /etc/my.cnf must not reach this server.
+ExecStart=/opt/alisql/bin/mysqld --defaults-file=/etc/alisql/my.cnf $MYSQLD_OPTS
+RuntimeDirectory=alisql
+LimitNOFILE=10000
+Restart=on-failure
+RestartPreventExitStatus=1
+TimeoutStartSec=900
+TimeoutStopSec=900
+
+[Install]
+WantedBy=multi-user.target

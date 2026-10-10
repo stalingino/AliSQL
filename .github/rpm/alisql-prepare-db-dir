@@ -1,0 +1,17 @@
+#!/bin/sh
+# Initializes the AliSQL data directory on first start (runs as the service user). The
+# generated root password is written to the error log.
+set -e
+basedir=/opt/alisql
+cnf=/etc/alisql/my.cnf
+datadir=$("$basedir/bin/my_print_defaults" --defaults-file="$cnf" mysqld | sed -n 's/^--datadir=//p' | tail -n 1)
+datadir=${datadir:-/var/lib/alisql}
+if [ -d "$datadir/mysql" ]; then
+  exit 0
+fi
+if [ -n "$(ls -A "$datadir" 2>/dev/null)" ]; then
+  echo "alisql: $datadir is not empty but has no mysql schema; not initializing it" >&2
+  exit 1
+fi
+echo "alisql: initializing $datadir; the temporary root password is in the error log" >&2
+exec "$basedir/bin/mysqld" --defaults-file="$cnf" --initialize
