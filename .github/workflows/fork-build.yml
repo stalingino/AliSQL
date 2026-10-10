@@ -13,9 +13,9 @@
 #   reports platform '"linux"' and version v0.0.1, and refuses to load
 #   extensions built for linux_amd64 / linux_arm64.
 #
-# The x86_64 build is also published as an RPM made from the same tarball
-# (.github/rpm: /opt/alisql, systemd service alisql, config /etc/alisql/my.cnf),
-# smoke-tested on Oracle Linux 7 and 9.
+# The x86_64 tarball is also published as an RPM (job rpm, .github/rpm: /opt/alisql,
+# systemd service alisql, config /etc/alisql/my.cnf), smoke-tested on Oracle Linux 7
+# and 9. It is its own job so a packaging failure re-runs without rebuilding.
 name: Build
 
 on:
@@ -51,7 +51,6 @@ jobs:
         include:
           - arch: x86_64
             runner: ubuntu-24.04
-            rpm: true
           - arch: aarch64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
@@ -65,12 +64,9 @@ jobs:
       - name: Build, test and package inside oraclelinux:7
         env:
           SHORT_SHA: ${{ github.sha }}
-          BUILD_RPM: ${{ matrix.rpm && 'yes' || 'no' }}
         run: |
           set -eux
           mkdir -p "$GITHUB_WORKSPACE/out"
-          # RPM release <commit date>.g<sha>: readable, and newer commits sort as upgrades.
-          RPM_RELEASE="$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y%m%d).g${SHORT_SHA:0:7}"
           docker run --rm -i \
             -v "$GITHUB_WORKSPACE:/AliSQL" \
             -v "$GITHUB_WORKSPACE/out:/out" \
@@ -79,8 +75,6 @@ jobs:
             -e PATCHELF_VERSION \
             -e PATCHELF_SHA256 \
             -e DUCKDB_VERSION \
-            -e BUILD_RPM \
-            -e RPM_RELEASE \
             oraclelinux:7 \
             bash -ex <<'INNER'
 
@@ -95,8 +89,7 @@ jobs:
           yum install -y -q git wget which bzip2 \
             devtoolset-10-gcc devtoolset-10-gcc-c++ devtoolset-10-binutils \
             openssl openssl-devel ncurses-devel libaio-devel perl-IPC-Cmd perl-Time-Piece bison \
-            perl-Data-Dumper perl-Time-HiRes perl-JSON perl-Digest-MD5 perl-Env perl-Test-Simple \
-            rpm-build
+            perl-Data-Dumper perl-Time-HiRes perl-JSON perl-Digest-MD5 perl-Env perl-Test-Simple
 
           cd /opt
           wget -q "https://github.com/Kitware/CMake/releases/download/v3.28.6/cmake-3.28.6-linux-$(uname -m).tar.gz"
@@ -203,25 +196,61 @@ jobs:
             alisql/
           ls -lh "/out/${PKG}"
 
-          # alisql-8.0.44-<yyyymmdd>.g<sha>.x86_64.rpm, built on EL7 so its rpm can install it too.
-          if [ "$BUILD_RPM" = yes ]; then
-            mkdir -p /tmp/rpm-src
-            cp /AliSQL/.github/rpm/* /tmp/rpm-src/
-            ln -s "/out/${PKG}" /tmp/rpm-src/
-            rpmbuild -bb /tmp/rpm-src/alisql.spec \
-              --define "_sourcedir /tmp/rpm-src" --define "_rpmdir /out" \
-              --define "_build_name_fmt %%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}.rpm" \
-              --define "alisql_version 8.0.44" --define "alisql_release ${RPM_RELEASE}" \
-              --define "alisql_tarball ${PKG}"
-            ls -lh /out/alisql-*.rpm
-          fi
+          INNER
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alisql-${{ matrix.arch }}
+          path: ${{ github.workspace }}/out/alisql-*.tar.xz
+          if-no-files-found: error
+          retention-days: 7
+
+  rpm:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: .github
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: alisql-x86_64
+          path: out
+
+      # alisql-8.0.44-<yyyymmdd>.g<sha>.x86_64.rpm, built on EL7 so its rpm can install it too.
+      - name: Build the RPM inside oraclelinux:7
+        run: |
+          set -eux
+          PKG=$(cd out && ls alisql-*-x86_64.tar.xz)
+          # Release <commit date>.g<sha>: readable, and newer commits sort as upgrades.
+          RELEASE="$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y%m%d).g${GITHUB_SHA:0:7}"
+          docker run --rm -i \
+            -v "$GITHUB_WORKSPACE/.github/rpm:/spec:ro" \
+            -v "$GITHUB_WORKSPACE/out:/out" \
+            -e PKG="$PKG" \
+            -e RELEASE="$RELEASE" \
+            oraclelinux:7 \
+            bash -eux <<'INNER'
+          yum install -y -q rpm-build
+          mkdir /tmp/rpm-src
+          cp /spec/* /tmp/rpm-src/
+          ln -s "/out/${PKG}" /tmp/rpm-src/
+          rpmbuild -bb /tmp/rpm-src/alisql.spec \
+            --define "_sourcedir /tmp/rpm-src" --define "_rpmdir /out" \
+            --define "_build_name_fmt %%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}.rpm" \
+            --define "alisql_version 8.0.44" --define "alisql_release ${RELEASE}" \
+            --define "alisql_tarball ${PKG}"
+          ls -lh /out/alisql-*.rpm
           INNER
 
       - name: Smoke-test the RPM on Oracle Linux 7 and 9
-        if: matrix.rpm
         run: |
           set -eux
-          RPM=$(cd "$GITHUB_WORKSPACE/out" && ls alisql-*.rpm)
+          RPM=$(cd out && ls alisql-*.rpm)
           for os in oraclelinux:7 oraclelinux:9; do
             docker run --rm -v "$GITHUB_WORKSPACE/out:/rpm:ro" -v "$GITHUB_WORKSPACE/.github/rpm:/t:ro" \
               "$os" sh /t/smoke-test.sh "/rpm/$RPM"
@@ -229,15 +258,13 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: alisql-${{ matrix.arch }}
-          path: |
-            ${{ github.workspace }}/out/alisql-*.tar.xz
-            ${{ github.workspace }}/out/alisql-*.rpm
+          name: alisql-rpm
+          path: ${{ github.workspace }}/out/alisql-*.rpm
           if-no-files-found: error
           retention-days: 7
 
   release:
-    needs: build
+    needs: [build, rpm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
