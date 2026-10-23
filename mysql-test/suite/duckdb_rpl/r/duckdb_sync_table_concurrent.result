@@ -1,0 +1,141 @@
+include/master-slave.inc
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+[connection master]
+CREATE TABLE t1 (id INT PRIMARY KEY, c VARCHAR(32)) ENGINE = InnoDB;
+INSERT INTO t1
+WITH RECURSIVE seq(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM seq WHERE i < 100)
+SELECT i, CONCAT('v', i) FROM seq;
+CREATE TABLE t2 (id INT PRIMARY KEY, c INT) ENGINE = InnoDB;
+INSERT INTO t2 VALUES (1, 1), (2, 2);
+include/rpl_sync.inc
+[connection slave]
+CALL mtr.add_suppression("duckdb sync job .* loaded 1 of 2 tables");
+SET @saved_debug = @@GLOBAL.debug;
+SET GLOBAL debug = '+d,duckdb_sync_after_stop_replica,duckdb_sync_after_snapshot,duckdb_sync_before_merge';
+CALL dbms_duckdb.sync_table('test', 't1, t2', 'threads=2');
+JOB_ID	MESSAGE
+#	started loading 2 table(s); see dbms_duckdb.sync_status()
+SET DEBUG_SYNC = 'now WAIT_FOR sync_applier_stopped';
+# The job holds the applier stopped; only the job restarts it.
+START REPLICA SQL_THREAD;
+ERROR HY000: [DuckDB] duckdb sync job # has paused the replica applier and restarts it itself; see dbms_duckdb.sync_status().
+#
+# R1. Before the snapshot, with the replica applier stopped.
+#
+[connection master]
+INSERT INTO t1 VALUES (101, 'before'), (102, 'before');
+UPDATE t1 SET c = 'before-upd' WHERE id = 5;
+UPDATE t1 SET id = 1006 WHERE id = 6;
+DELETE FROM t1 WHERE id = 7;
+ALTER TABLE t1 ADD COLUMN extra INT DEFAULT 7;
+include/sync_slave_io_with_master.inc
+SET DEBUG_SYNC = 'now SIGNAL sync_continue_snapshot';
+SET DEBUG_SYNC = 'now WAIT_FOR sync_snapshot_taken';
+#
+# R2. After the snapshot. Replication keeps running before the copy.
+#
+[connection master]
+INSERT INTO t1 (id, c) VALUES (201, 'after');
+UPDATE t1 SET c = 'after-upd' WHERE id = 8;
+UPDATE t1 SET id = 1009 WHERE id = 9;
+DELETE FROM t1 WHERE id = 101;
+UPDATE t1 SET c = 'twice-1' WHERE id = 10;
+UPDATE t1 SET c = 'twice-2' WHERE id = 10;
+INSERT INTO t1 (id, c) VALUES (202, 'gone');
+DELETE FROM t1 WHERE id = 202;
+DELETE FROM t1 WHERE id = 11;
+INSERT INTO t1 (id, c) VALUES (11, 'again');
+UPDATE t2 SET c = 20 WHERE id = 2;
+include/rpl_sync.inc
+[connection slave]
+# The copy has not started yet: the tables are still empty.
+SELECT COUNT(*) FROM t1;
+COUNT(*)
+0
+SELECT COUNT(*) FROM t2;
+COUNT(*)
+0
+SET DEBUG_SYNC = 'now SIGNAL sync_continue_load';
+SET DEBUG_SYNC = 'now WAIT_FOR sync_copied';
+#
+# R3, R4. After the copy, before the merge.
+#
+[connection master]
+UPDATE t1 SET c = 'copied' WHERE id = 13;
+DELETE FROM t1 WHERE id = 14;
+ALTER TABLE t2 ADD COLUMN d INT;
+INSERT INTO t2 VALUES (3, 3, 3);
+include/rpl_sync.inc
+[connection slave]
+# Buffered, not yet in the table.
+SELECT * FROM t1 WHERE id IN (13, 14) ORDER BY id;
+id	c	extra
+13	v13	7
+14	v14	7
+SET DEBUG_SYNC = 'now SIGNAL sync_continue_merge';
+SET GLOBAL debug = @saved_debug;
+SET DEBUG_SYNC = 'RESET';
+[connection master]
+UPDATE t1 SET c = 'after-merge' WHERE id = 12;
+include/rpl_sync.inc
+[connection slave]
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `id` int NOT NULL,
+  `c` varchar(32) DEFAULT NULL,
+  `extra` int DEFAULT '7',
+  PRIMARY KEY (`id`)
+) ENGINE=DUCKDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+SELECT COUNT(*), COUNT(DISTINCT id) FROM t1;
+COUNT(*)	COUNT(DISTINCT id)
+100	100
+SELECT * FROM t1 WHERE id IN (1, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 101, 102,
+201, 202, 1006, 1009) ORDER BY id;
+id	c	extra
+1	v1	7
+5	before-upd	7
+8	after-upd	7
+10	twice-2	7
+11	again	7
+12	after-merge	7
+13	copied	7
+102	before	7
+201	after	7
+1006	v6	7
+1009	v9	7
+include/diff_tables.inc [master:t1, slave:t1]
+CALL dbms_duckdb.sync_status();
+SCHEMA_NAME	TABLE_NAME	STATE	ROWS_LOADED	ROWS_EXPECTED	JOB_ID	STARTED_AT	FINISHED_AT	SNAPSHOT_GTID_SET	LAST_ERROR
+test	t1	ACTIVE	101	101	#	#	#	#	
+test	t2	FAILED	2	2	#	#	#	#	DDL on the table was replicated during the load; run the sync again
+#
+# R3. Sync t2 again.
+#
+CALL dbms_duckdb.sync_table('test', 't2', '');
+JOB_ID	MESSAGE
+#	started loading 1 table(s); see dbms_duckdb.sync_status()
+state: ACTIVE
+[connection master]
+INSERT INTO t2 VALUES (4, 4, 4);
+include/rpl_sync.inc
+[connection slave]
+SELECT * FROM t2 ORDER BY id;
+id	c	d
+1	1	NULL
+2	20	NULL
+3	3	3
+4	4	4
+#
+# Cleanup
+#
+CALL dbms_duckdb.unsync_table('test', 't1');
+CALL dbms_duckdb.unsync_table('test', 't2');
+SET sql_log_bin = 0;
+DROP TABLE t1, t2;
+SET sql_log_bin = 1;
+[connection master]
+DROP TABLE t1, t2;
+include/rpl_end.inc

@@ -1,0 +1,63 @@
+# ==== Purpose ====
+#
+# A replica crash in the middle of dbms_duckdb.sync_table() leaves the table
+# FAILED; running the sync again reloads it from scratch.
+
+--source include/have_debug.inc
+--source include/have_binlog_format_row.inc
+--source include/not_valgrind.inc
+--source include/master-slave.inc
+
+CREATE TABLE t1 (id INT PRIMARY KEY, c VARCHAR(32)) ENGINE = InnoDB;
+INSERT INTO t1
+  WITH RECURSIVE seq(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM seq WHERE i < 100)
+  SELECT i, CONCAT('v', i) FROM seq;
+--source include/rpl_sync.inc
+
+--echo #
+--echo # Crash after the first committed chunk.
+--echo #
+--source include/rpl_connection_slave.inc
+SET GLOBAL debug = '+d,duckdb_sync_crash_after_commit';
+--exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.2.expect
+--replace_column 1 #
+CALL dbms_duckdb.sync_table('test', 't1', 'threads=1;commit_rows=10');
+--source include/wait_until_disconnected.inc
+--let $rpl_server_number = 2
+--source include/rpl_start_server.inc
+
+--source include/rpl_connection_slave.inc
+--let $sync_state = query_get_value(CALL dbms_duckdb.sync_status(), STATE, 1)
+--echo state: $sync_state
+--let $sync_error = query_get_value(CALL dbms_duckdb.sync_status(), LAST_ERROR, 1)
+--echo error: $sync_error
+
+--echo #
+--echo # A FAILED table is reloaded from scratch.
+--echo #
+--replace_column 1 #
+CALL dbms_duckdb.sync_table('test', 't1', 'threads=2;commit_rows=10');
+--let $sync_row = 1
+--source suite/duckdb_rpl/include/wait_sync_table.inc
+--echo state: $sync_state
+--source include/start_slave.inc
+
+--source include/rpl_connection_master.inc
+INSERT INTO t1 VALUES (500, 'after');
+--source include/rpl_sync.inc
+--source include/rpl_connection_slave.inc
+SELECT COUNT(*), COUNT(DISTINCT id), SUM(id) FROM t1;
+--let $test_duckdb = 1
+--let $diff_tables = master:t1, slave:t1
+--source include/diff_tables.inc
+
+--echo #
+--echo # Cleanup
+--echo #
+CALL dbms_duckdb.unsync_table('test', 't1');
+SET sql_log_bin = 0;
+DROP TABLE t1;
+SET sql_log_bin = 1;
+--source include/rpl_connection_master.inc
+DROP TABLE t1;
+--source include/rpl_end.inc

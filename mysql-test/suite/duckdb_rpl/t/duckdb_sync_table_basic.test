@@ -1,0 +1,163 @@
+# ==== Purpose ====
+#
+# dbms_duckdb.sync_table() loads tables that the replica filters out from
+# the replication source and adds them to replication without a restart.
+#
+# ==== Requirements ====
+#
+# R1. The snapshot is copied into DuckDB tables with several copy workers.
+# R2. Row changes and DDL made after the snapshot replicate to synced tables
+#     although replicate-do-table does not list them.
+# R3. refresh=1 reloads a synced table.
+# R4. A failing table is reported as FAILED and replication keeps running;
+#     tables need a primary key.
+# R5. unsync_table() hands the table back to the replicate-* filters and
+#     adopt=1 registers an existing table without copying it.
+
+--source include/have_binlog_format_row.inc
+--source include/master-slave.inc
+
+--echo #
+--echo # Source tables that the replica filters out.
+--echo #
+CREATE TABLE t1 (id INT PRIMARY KEY, c VARCHAR(32), d DATETIME(3),
+                 ts TIMESTAMP NULL, n DECIMAL(10,2), b VARBINARY(8),
+                 e ENUM('x','y')) ENGINE = InnoDB;
+INSERT INTO t1
+  WITH RECURSIVE seq(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM seq WHERE i < 1000)
+  SELECT i, CONCAT('row', i), '2024-01-02 03:04:05.678', '2024-06-01 12:00:00',
+         i / 3, UNHEX('00FF'), IF(i % 2, 'x', 'y') FROM seq;
+INSERT INTO t1 VALUES (-5, NULL, NULL, NULL, NULL, NULL, NULL);
+CREATE TABLE t2 (id INT PRIMARY KEY, a INT, b VARCHAR(10), j JSON) ENGINE = InnoDB;
+INSERT INTO t2 VALUES (1, 1, 'a', '{"k": 1}'), (2, 1, 'a', NULL), (3, NULL, 'b', '[1, 2]');
+CREATE TABLE t3 (a INT, b VARCHAR(10)) ENGINE = InnoDB;
+INSERT INTO t3 VALUES (1, 'a'), (1, 'a'), (NULL, 'b');
+--source include/rpl_sync.inc
+
+--source include/rpl_connection_slave.inc
+CALL mtr.add_suppression("duckdb sync job .* failed: ");
+CALL mtr.add_suppression("duckdb sync job .* loaded 0 of");
+SHOW TABLES FROM test;
+
+--echo #
+--echo # R1. Load the tables.
+--echo #
+--replace_column 1 #
+CALL dbms_duckdb.sync_table('test', 't1, t2', 'threads=3');
+--let $sync_row = 1
+--source suite/duckdb_rpl/include/wait_sync_table.inc
+--let $sync_row = 2
+--source suite/duckdb_rpl/include/wait_sync_table.inc
+SHOW CREATE TABLE t1;
+SELECT COUNT(*), COUNT(DISTINCT id), SUM(id) FROM t1;
+SELECT * FROM t2 ORDER BY id;
+
+--echo #
+--echo # R2. Changes after the snapshot replicate, DDL included.
+--echo #
+--source include/rpl_connection_master.inc
+INSERT INTO t1 (id, c) VALUES (2000, 'after');
+UPDATE t1 SET c = 'updated', id = 3000 WHERE id = 10;
+DELETE FROM t1 WHERE id BETWEEN 100 AND 199;
+ALTER TABLE t2 ADD COLUMN c INT DEFAULT 7;
+INSERT INTO t2 (id, a, b) VALUES (4, 2, 'c');
+--source include/rpl_sync.inc
+
+--source include/rpl_connection_slave.inc
+--replace_column 6 # 7 # 8 # 9 #
+CALL dbms_duckdb.sync_status();
+SELECT COUNT(*), COUNT(DISTINCT id), SUM(id) FROM t1;
+SELECT * FROM t2 ORDER BY id;
+--let $test_duckdb = 1
+--let $diff_tables = master:t1, slave:t1
+--source include/diff_tables.inc
+
+--echo #
+--echo # Validation errors.
+--echo #
+--error ER_DUCKDB_CLIENT
+CALL dbms_duckdb.sync_table('test', 't1', '');
+--error ER_DUCKDB_CLIENT
+CALL dbms_duckdb.sync_table('test', 't1', 'bogus=1');
+--error ER_DUCKDB_CLIENT
+CALL dbms_duckdb.sync_table('test', 't1', 'threads=0');
+--error ER_DUCKDB_CLIENT
+CALL dbms_duckdb.sync_table('mysql', 'user', '');
+--error ER_DUCKDB_CLIENT
+CALL dbms_duckdb.sync_table('test', '', '');
+--error ER_DUCKDB_CLIENT
+CALL dbms_duckdb.sync_table('test', 't1', 'channel=nope');
+
+--echo #
+--echo # R3. Reload a synced table.
+--echo #
+--replace_column 1 #
+CALL dbms_duckdb.sync_table('test', 't1', 'refresh=1');
+--let $sync_row = 1
+--source suite/duckdb_rpl/include/wait_sync_table.inc
+--source include/rpl_connection_master.inc
+INSERT INTO t1 (id) VALUES (4000);
+--source include/rpl_sync.inc
+--source include/rpl_connection_slave.inc
+SELECT COUNT(*), COUNT(DISTINCT id), SUM(id) FROM t1;
+--let $diff_tables = master:t1, slave:t1
+--source include/diff_tables.inc
+
+--echo #
+--echo # R4. A table missing on the source fails; replication keeps running.
+--echo #
+--replace_column 1 #
+CALL dbms_duckdb.sync_table('test', 'no_such_table', '');
+--let $sync_row = 1
+--source suite/duckdb_rpl/include/wait_sync_table.inc
+--echo state: $sync_state
+--let $sync_error = query_get_value(CALL dbms_duckdb.sync_status(), LAST_ERROR, 1)
+--echo error: $sync_error
+--source include/rpl_connection_master.inc
+INSERT INTO t1 (id) VALUES (5000);
+--source include/rpl_sync.inc
+--source include/rpl_connection_slave.inc
+SELECT COUNT(*) FROM t1 WHERE id = 5000;
+CALL dbms_duckdb.unsync_table('test', 'no_such_table');
+--error ER_DUCKDB_CLIENT
+CALL dbms_duckdb.unsync_table('test', 'no_such_table');
+
+--replace_column 1 #
+CALL dbms_duckdb.sync_table('test', 't3', '');
+--let $sync_row = 3
+--source suite/duckdb_rpl/include/wait_sync_table.inc
+--echo state: $sync_state
+--let $sync_error = query_get_value(CALL dbms_duckdb.sync_status(), LAST_ERROR, 3)
+--echo error: $sync_error
+CALL dbms_duckdb.unsync_table('test', 't3');
+
+--echo #
+--echo # R5. unsync_table() and adopt=1.
+--echo #
+CALL dbms_duckdb.unsync_table('test', 't2');
+--source include/rpl_connection_master.inc
+INSERT INTO t2 (id, a) VALUES (99, 99);
+--source include/rpl_sync.inc
+--source include/rpl_connection_slave.inc
+SELECT COUNT(*) FROM t2 WHERE id = 99;
+CALL dbms_duckdb.sync_table('test', 't2', 'adopt=1');
+--source include/rpl_connection_master.inc
+INSERT INTO t2 (id, a) VALUES (100, 100);
+--source include/rpl_sync.inc
+--source include/rpl_connection_slave.inc
+SELECT id FROM t2 WHERE id IN (99, 100);
+--replace_column 6 # 7 # 8 # 9 #
+CALL dbms_duckdb.sync_status();
+
+--echo #
+--echo # Cleanup
+--echo #
+CALL dbms_duckdb.unsync_table('test', 't1');
+CALL dbms_duckdb.unsync_table('test', 't2');
+CALL dbms_duckdb.sync_status();
+SET sql_log_bin = 0;
+DROP TABLE IF EXISTS t1, t2, t3;
+SET sql_log_bin = 1;
+--source include/rpl_connection_master.inc
+DROP TABLE t1, t2, t3;
+--source include/rpl_end.inc

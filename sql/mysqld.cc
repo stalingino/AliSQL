@@ -696,6 +696,7 @@ MySQL clients support the protocol:
 
 #include "sql/duckdb/duckdb_config.h"
 #include "sql/duckdb/duckdb_manager.h"
+#include "sql/duckdb/duckdb_sync.h"
 
 #include "errmsg.h"  // init_client_errs
 #include "ft_global.h"
@@ -2695,6 +2696,8 @@ static void clean_up(bool print_message) {
   if (!opt_initialize && duckdb_convert_all_at_startup) {
     dd::upgrade::myduck::stop_duckdb_convertor_thread();
   }
+
+  myduck::sync_shutdown();
 
   ha_pre_dd_shutdown();
   dd::shutdown();
@@ -8296,6 +8299,9 @@ int mysqld_main(int argc, char **argv)
   check_binlog_stmt_cache_size(nullptr);
 
   binlog_unsafe_map_init();
+
+  /* The applier consults the tables registered by dbms_duckdb.sync_table(). */
+  if (!opt_initialize) myduck::sync_registry_init();
 
   ReplicaInitializer replica_initializer(opt_initialize, opt_skip_replica_start,
                                          rpl_channel_filters,

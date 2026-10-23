@@ -27,6 +27,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "sql/duckdb/duckdb_proc.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/duckdb/duckdb_query.h"
+#include "sql/duckdb/duckdb_sync.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_prepare.h"
 #include "sql/strfunc.h"
@@ -97,6 +98,107 @@ void Sql_cmd_duckdb_query::send_result(THD *thd, bool error) {
   my_eof(thd);
 
   DBUG_VOID_RETURN;
+}
+
+/** Read string argument i of a procedure call; false if it is NULL. */
+static bool get_string_arg(mem_root_deque<Item *> *list, size_t i,
+                           std::string *out) {
+  char buff[1024];
+  String str(buff, sizeof(buff), system_charset_info);
+  String *res = (*list)[i]->val_str(&str);
+  if (res == nullptr) return false;
+  out->assign(res->ptr(), res->length());
+  return true;
+}
+
+Proc *Duckdb_proc_sync_table::instance() {
+  static Proc *proc = new Duckdb_proc_sync_table();
+  return proc;
+}
+
+Sql_cmd *Duckdb_proc_sync_table::evoke_cmd(
+    THD *thd, mem_root_deque<Item *> *list) const {
+  return new (thd->mem_root) Sql_cmd_type(thd, list, this);
+}
+
+bool Sql_cmd_duckdb_sync_table::pc_execute(THD *thd) {
+  std::string schema, tables, options;
+  if (!get_string_arg(m_list, 0, &schema) ||
+      !get_string_arg(m_list, 1, &tables)) {
+    my_error(ER_DUCKDB_CLIENT, MYF(0), "schema and tables must not be NULL");
+    return true;
+  }
+  get_string_arg(m_list, 2, &options);
+  return sync_table(thd, schema, tables, options, &m_job_id, &m_message);
+}
+
+void Sql_cmd_duckdb_sync_table::send_result(THD *thd, bool error) {
+  if (error) return;
+  Protocol *protocol = thd->get_protocol();
+  if (m_proc->send_result_metadata(thd)) return;
+  protocol->start_row();
+  protocol->store(m_job_id);
+  protocol->store_string(m_message.c_str(), m_message.length(),
+                         system_charset_info);
+  if (protocol->end_row()) return;
+  my_eof(thd);
+}
+
+Proc *Duckdb_proc_sync_status::instance() {
+  static Proc *proc = new Duckdb_proc_sync_status();
+  return proc;
+}
+
+Sql_cmd *Duckdb_proc_sync_status::evoke_cmd(
+    THD *thd, mem_root_deque<Item *> *list) const {
+  return new (thd->mem_root) Sql_cmd_type(thd, list, this);
+}
+
+void Sql_cmd_duckdb_sync_status::send_result(THD *thd, bool error) {
+  if (error) return;
+  std::vector<Sync_status_row> rows;
+  sync_status(&rows);
+
+  Protocol *protocol = thd->get_protocol();
+  if (m_proc->send_result_metadata(thd)) return;
+  auto store = [protocol](const std::string &s) {
+    protocol->store_string(s.c_str(), s.length(), system_charset_info);
+  };
+  for (const Sync_status_row &row : rows) {
+    protocol->start_row();
+    store(row.schema_name);
+    store(row.table_name);
+    store(row.state);
+    protocol->store(row.rows_loaded);
+    protocol->store(row.rows_expected);
+    protocol->store(row.job_id);
+    store(row.started_at);
+    store(row.finished_at);
+    store(row.snapshot_gtid_set);
+    store(row.last_error);
+    if (protocol->end_row()) return;
+  }
+  my_eof(thd);
+}
+
+Proc *Duckdb_proc_unsync_table::instance() {
+  static Proc *proc = new Duckdb_proc_unsync_table();
+  return proc;
+}
+
+Sql_cmd *Duckdb_proc_unsync_table::evoke_cmd(
+    THD *thd, mem_root_deque<Item *> *list) const {
+  return new (thd->mem_root) Sql_cmd_type(thd, list, this);
+}
+
+bool Sql_cmd_duckdb_unsync_table::pc_execute(THD *thd) {
+  std::string schema, table;
+  if (!get_string_arg(m_list, 0, &schema) ||
+      !get_string_arg(m_list, 1, &table)) {
+    my_error(ER_DUCKDB_CLIENT, MYF(0), "schema and table must not be NULL");
+    return true;
+  }
+  return unsync_table(thd, schema, table);
 }
 
 }  // namespace myduck

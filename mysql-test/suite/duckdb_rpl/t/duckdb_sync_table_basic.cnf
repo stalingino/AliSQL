@@ -1,0 +1,9 @@
+!include suite/duckdb_rpl/my.cnf
+
+[mysqld.1]
+binlog-format = row
+
+[mysqld.2]
+binlog-format = row
+# Like a production DuckDB replica: only listed tables are replicated.
+replicate-do-table = test.t_marker

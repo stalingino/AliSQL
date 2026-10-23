@@ -272,6 +272,63 @@ Confirm that `SHOW REPLICA STATUS\G` reports no I/O or SQL error before routing 
 5. **Done**
 Route analytics/reporting queries to the DuckDB replica.
 
+### Adding tables to a running replica
+
+A replica that only replicates some tables (`replicate-do-table` / `replicate-wild-do-table`) can take on more tables without a backup, a `my.cnf` edit or a restart:
+
+```sql
+CALL dbms_duckdb.sync_table('financialForms', 'customer, loan_account', 'threads=4');
+CALL dbms_duckdb.sync_status();
+```
+
+`sync_table` starts a background job and returns its id. The job:
+
+1. Connects to the source with the channel's credentials, then briefly stops the replica applier (`STOP REPLICA SQL_THREAD`); the receiver keeps fetching binlogs. While it is stopped, the job:
+   - runs `LOCK TABLES ... READ` on the listed tables;
+   - starts one consistent snapshot per copy thread, reads `@@GLOBAL.gtid_executed` (the snapshot's GTID set) and the table definitions, then unlocks;
+   - creates the tables as DuckDB tables from the source definitions;
+   - restarts the applier.
+
+   The source lock is held only for these few statements, but it waits for running transactions on those tables.
+2. Streams the snapshot into the tables through the DuckDB appender. Tables with a single-column integer primary key are split across the copy threads.
+
+   Replication keeps running during the copy. Changes to a loading table that are already in the snapshot are skipped. All other changes are written to a per-table delta table instead of the table.
+3. Briefly stops the applier again and merges each delta into its table, keeping the last row image per primary key. Then marks the tables `CATCHING_UP` and restarts the applier.
+
+After that, the applier skips changes to a synced table whose GTID is in its snapshot GTID set, because they are already in the copied data. It applies all other changes. The table becomes `ACTIVE` once the replica has executed the whole set.
+
+Requirements:
+
+- `gtid_mode=ON` on both servers; `binlog_format=ROW` and `binlog_row_image=FULL` on the source.
+- Every synced table needs a primary key.
+- The replication user needs `SELECT` and `LOCK TABLES` on the synced schemas.
+
+Synced tables are recorded inside DuckDB (`mysql.duckdb_sync_tables`) and take precedence over the `replicate-*` filters: `ACTIVE`/`CATCHING_UP` tables are always replicated, `FAILED` tables never are.
+
+Options (`key=value`, separated by `;` or `,`):
+
+| Option | Default | Meaning |
+|---|---|---|
+| `threads` | 4 | copy threads / source snapshot connections |
+| `refresh` | 0 | drop and reload a table that is already synced or not empty |
+| `adopt` | 0 | register tables that are already loaded and replicated (for example, through `my.cnf` filters) as `ACTIVE` without copying |
+| `verify` | 1 | compare the copied row count with `COUNT(*)` in the snapshot |
+| `commit_rows` | 500000 | rows per local commit |
+| `lock_wait_timeout` | 60 | seconds to wait for `LOCK TABLES` on the source |
+| `net_timeout` | 3600 | network timeouts of the source connections |
+| `channel` | `''` | replication channel to load from |
+
+`CALL dbms_duckdb.unsync_table('db', 'table')` removes a table from the registry, so the `replicate-*` filters decide again. The local table is kept.
+
+Notes:
+
+- Until a table is `CATCHING_UP` or `ACTIVE`, queries on the replica see a partially loaded table.
+- Long snapshots keep InnoDB undo history on the source, as `mysqldump --single-transaction` does. Prefer loading large tables from another replica of the source.
+- DDL on a table while it is loading fails that table's load (`FAILED`). Run `sync_table` again afterwards.
+- A table interrupted by a crash or an error is `FAILED` and excluded from replication. Running `sync_table` again reloads it from scratch.
+- During the two short pauses, `Replica_SQL_Running` is `No` and `START REPLICA` on that channel fails with `duckdb sync job N has paused the replica applier and restarts it itself`. The job restarts the applier when the pause ends, but only if the applier was running when the pause began.
+- `replicate-rewrite-db` / `replicate-rewrite-table` are not supported for synced tables: the source and local names must match.
+
 ## Managed RDS Alternative
 
 RDS MySQL provides managed DuckDB analytical primary and read-only instances. Provisioning, topology, synchronization, and supported versions are described in the official [English](https://help.aliyun.com/en/rds/apsaradb-rds-for-mysql/duckdb-analysis-instance) and [Chinese](https://help.aliyun.com/zh/rds/apsaradb-rds-for-mysql/duckdb-analysis-instance) documentation. The bootstrap procedure on this page is for self-managed AliSQL.

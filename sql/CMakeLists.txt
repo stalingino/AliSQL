@@ -658,6 +658,7 @@ SET(SQL_SHARED_SOURCES
   duckdb/duckdb_charset_collation.cc
   duckdb/duckdb_config.cc
   duckdb/duckdb_mysql_udf.cc
+  duckdb/duckdb_sync.cc
   )
 
 IF(BUILD_IS_SINGLE_CONFIG)

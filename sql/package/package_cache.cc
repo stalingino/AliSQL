@@ -122,6 +122,13 @@ void package_context_init() {
 
   /* dbms_duckdb.query() */
   register_package<Proc, myduck::Duckdb_proc_query>(myduck::DUCKDB_PROC_SCHEMA);
+  /* dbms_duckdb.sync_table() / sync_status() / unsync_table() */
+  register_package<Proc, myduck::Duckdb_proc_sync_table>(
+      myduck::DUCKDB_PROC_SCHEMA);
+  register_package<Proc, myduck::Duckdb_proc_sync_status>(
+      myduck::DUCKDB_PROC_SCHEMA);
+  register_package<Proc, myduck::Duckdb_proc_unsync_table>(
+      myduck::DUCKDB_PROC_SCHEMA);
 
   /* Native flashback procedures under dbms_admin. */
   register_package<Proc, im::flashback::Flashback_proc_show>(

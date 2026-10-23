@@ -114,6 +114,7 @@
 #include "sql/debug_sync.h"   // DEBUG_SYNC
 #include "sql/derror.h"       // ER_THD
 #include "sql/duckdb/duckdb_config.h"  // myduck::global_mode
+#include "sql/duckdb/duckdb_sync.h"    // myduck::sync_check_applier_start
 #include "sql/dynamic_ids.h"  // Server_ids
 #include "sql/handler.h"
 #include "sql/item.h"
@@ -9439,6 +9440,11 @@ bool start_slave(THD *thd, LEX_SLAVE_CONNECTION *connection_param,
              "SUPER or REPLICATION_SLAVE_ADMIN");
     return true;
   }
+
+  /* A DuckDB sync job may hold the applier stopped for a moment. */
+  if ((thread_mask_input == 0 || (thread_mask_input & SLAVE_SQL)) &&
+      myduck::sync_check_applier_start(thd, mi->get_channel()))
+    return true;
 
   mi->channel_wrlock();
 

@@ -122,6 +122,7 @@
 #include "sql/debug_sync.h"               // debug_sync_set_action
 #include "sql/derror.h"                   // ER_THD
 #include "sql/duckdb/duckdb_context.h"
+#include "sql/duckdb/duckdb_sync.h"
 #include "sql/enum_query_type.h"
 #include "sql/field.h"
 #include "sql/handler.h"
@@ -11019,8 +11020,17 @@ static enum_tbl_map_status check_table_map(Relay_log_info const *rli,
   DBUG_TRACE;
   enum_tbl_map_status res = OK_TO_PROCESS;
 
-  if (rli->info_thd->slave_thread /* filtering is for slave only */ &&
-      (!rli->rpl_filter->db_ok(table_list->db) ||
+  /* Tables registered by dbms_duckdb.sync_table() override the filters. */
+  myduck::Sync_decision sync_decision =
+      rli->info_thd->slave_thread
+          ? myduck::sync_filter_decision(rli->info_thd, table_list->db,
+                                         table_list->table_name)
+          : myduck::Sync_decision::NO_OPINION;
+
+  if (sync_decision != myduck::Sync_decision::INCLUDE &&
+      rli->info_thd->slave_thread /* filtering is for slave only */ &&
+      (sync_decision == myduck::Sync_decision::EXCLUDE ||
+       !rli->rpl_filter->db_ok(table_list->db) ||
        (rli->rpl_filter->is_on() &&
         !rli->rpl_filter->tables_ok("", table_list))))
     if (rli->info_thd->get_transaction()->xid_state()->has_state(

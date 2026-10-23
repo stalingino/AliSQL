@@ -36,6 +36,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "sql/duckdb/duckdb_context.h"
 #include "sql/duckdb/duckdb_manager.h"
 #include "sql/duckdb/duckdb_sql_quote.h"
+#include "sql/duckdb/duckdb_sync.h"
 #include "sql/duckdb/duckdb_timezone.h"  // days_at_timestart
 #include "sql/field.h"                   // field
 #include "sql/tztime.h"                  // my_tz_UTC
@@ -47,15 +48,15 @@ ulonglong batch_max_row_count = 0;
 DeltaAppender *DeltaAppenders::get_appender(THD *thd, std::string &db, std::string &tb,
                                             bool insert_only,
                                             bool idempotent_flag,
-                                            TABLE *table) {
+                                            TABLE *table, bool buffered) {
   auto key = std::make_pair(db, tb);
   auto it = m_append_infos.find(key);
 
   if (it != m_append_infos.end()) {
     return it->second.get();
   } else {
-    auto appender = std::make_unique<DeltaAppender>(thd, db, tb, !insert_only,
-                                                    idempotent_flag);
+    auto appender = std::make_unique<DeltaAppender>(
+        thd, db, tb, buffered || !insert_only, idempotent_flag, buffered);
 
     try {
       if (appender->Initialize(table)) {
@@ -323,6 +324,18 @@ void DeltaAppender::generateQuery(std::stringstream &ss, bool delete_flag) {
 
 bool DeltaAppender::flush() {
   m_appender->Flush();
+
+  if (m_buffered) {
+    /* Keep the batch, ordered after everything buffered before it. */
+    if (m_row_count == 0) return false;
+    ulonglong base =
+        myduck::sync_reserve_delta_seq(m_schema_name, m_table_name, m_row_count);
+    std::stringstream ss;
+    ss << "INSERT INTO " << myduck::sync_delta_table(m_schema_name, m_table_name)
+       << " SELECT *, " << base << " + `#alibaba_rds_row_no` FROM main."
+       << myduck::quote_duckdb_ident(m_tmp_table_name) << ";";
+    return myduck::duckdb_query(m_thd, ss.str())->HasError();
+  }
 
   if (m_use_tmp_table) {
     std::stringstream ss;

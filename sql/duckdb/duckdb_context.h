@@ -223,7 +223,11 @@ class DuckdbThdContext {
     return false;
   }
 
-  DeltaAppender *get_appender(TABLE *table);
+  /**
+    @param buffered  the table is being loaded by dbms_duckdb.sync_table(); its
+                     changes go to the sync delta table
+  */
+  DeltaAppender *get_appender(TABLE *table, bool buffered = false);
 
   void delete_appender(std::string &db, std::string &tb) {
     if (!m_appenders || m_appenders->is_empty()) {
@@ -232,11 +236,13 @@ class DuckdbThdContext {
     m_appenders->delete_appender(db, tb);
   }
 
-  int append_row_insert(TABLE *table, const MY_BITMAP *blob_map);
+  int append_row_insert(TABLE *table, const MY_BITMAP *blob_map,
+                        bool buffered = false);
 
-  int append_row_update(TABLE *table, const uchar *old_row);
+  int append_row_update(TABLE *table, const uchar *old_row,
+                        bool buffered = false);
 
-  int append_row_delete(TABLE *table);
+  int append_row_delete(TABLE *table, bool buffered = false);
 
   void set_in_copy_ddl(bool in) { in_copy_ddl = in; }
   bool is_in_copy_ddl() { return in_copy_ddl; }

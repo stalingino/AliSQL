@@ -198,7 +198,7 @@ DuckdbThdContext::DuckdbSessionConfig::compare_and_config(
   return res;
 }
 
-DeltaAppender *DuckdbThdContext::get_appender(TABLE *table) {
+DeltaAppender *DuckdbThdContext::get_appender(TABLE *table, bool buffered) {
   if (!m_appenders) {
     m_appenders = std::make_unique<DeltaAppenders>();
   }
@@ -209,24 +209,26 @@ DeltaAppender *DuckdbThdContext::get_appender(TABLE *table) {
   std::string tb(table->s->table_name.str, table->s->table_name.length);
 
   return m_appenders->get_appender(m_thd, db, tb, batch_state == IN_INSERT_ONLY_BATCH,
-                                   get_idempotent_flag(), table);
+                                   get_idempotent_flag(), table, buffered);
 }
 
 int DuckdbThdContext::append_row_insert(TABLE *table,
-                                        const MY_BITMAP *blob_map) {
-  DeltaAppender *delta = get_appender(table);
+                                        const MY_BITMAP *blob_map,
+                                        bool buffered) {
+  DeltaAppender *delta = get_appender(table, buffered);
   return delta ? delta->append_row_insert(table, cur_trx_no, blob_map)
                : HA_DUCKDB_APPEND_ERROR;
 }
 
-int DuckdbThdContext::append_row_update(TABLE *table, const uchar *old_row) {
-  DeltaAppender *delta = get_appender(table);
+int DuckdbThdContext::append_row_update(TABLE *table, const uchar *old_row,
+                                        bool buffered) {
+  DeltaAppender *delta = get_appender(table, buffered);
   return delta ? delta->append_row_update(table, cur_trx_no, old_row)
                : HA_DUCKDB_APPEND_ERROR;
 }
 
-int DuckdbThdContext::append_row_delete(TABLE *table) {
-  DeltaAppender *delta = get_appender(table);
+int DuckdbThdContext::append_row_delete(TABLE *table, bool buffered) {
+  DeltaAppender *delta = get_appender(table, buffered);
   return delta ? delta->append_row_delete(table, cur_trx_no)
                : HA_DUCKDB_APPEND_ERROR;
 }

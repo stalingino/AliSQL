@@ -47,10 +47,16 @@ class DeltaAppender {
     return db + "_rds_buf_" + tb;
   }
 
+  /**
+    @param buffered  the table is being loaded by dbms_duckdb.sync_table():
+                     flush appends the batch to the table's delta table
+                     instead of applying it (requires use_tmp_table)
+  */
   DeltaAppender(THD *thd, std::string db, std::string tb, bool use_tmp_table,
-                bool idempotent_flag)
+                bool idempotent_flag, bool buffered = false)
       : m_use_tmp_table(use_tmp_table),
         m_idempotent_flag(idempotent_flag),
+        m_buffered(buffered),
         m_schema_name(db),
         m_table_name(tb),
         m_thd(thd) {}
@@ -78,6 +84,7 @@ class DeltaAppender {
 
   bool m_use_tmp_table;   // whether this trx need tmp table
   bool m_idempotent_flag; // whether this trx need commit idempotently
+  bool m_buffered;        // whether flush goes to the sync delta table
 
   std::string m_schema_name;
   std::string m_table_name;
@@ -116,7 +123,7 @@ class DeltaAppenders {
 
   DeltaAppender *get_appender(THD *thd, std::string &db, std::string &tb,
                               bool insert_only, bool idempotent_flag,
-                              TABLE *table);
+                              TABLE *table, bool buffered = false);
 
  private:
   int append_mysql_field(duckdb::PhysicalAppender *appender, const Field *field);

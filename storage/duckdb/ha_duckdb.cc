@@ -50,6 +50,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "sql/duckdb/duckdb_config.h"
 #include "sql/duckdb/duckdb_sql_quote.h"
 #include "sql/duckdb/duckdb_table.h"
+#include "sql/duckdb/duckdb_sync.h"
 #include "sql/rpl_rli.h"
 #include "sql/sql_class.h"
 #include "sql/sql_lex.h"
@@ -676,7 +677,11 @@ int ha_duckdb::write_row(uchar *buf) {
       get_batch_state(thd, idempotent_flag, insert_only_flag);
   assert(batch_state != myduck::BatchState::UNDEFINED);
 
-  if (batch_state == myduck::BatchState::NOT_IN_BATCH) {
+  /* A table being loaded by dbms_duckdb.sync_table() buffers its changes. */
+  bool buffered = myduck::sync_is_buffered(thd, table_share->db.str,
+                                           table_share->table_name.str);
+
+  if (!buffered && batch_state == myduck::BatchState::NOT_IN_BATCH) {
     if (idempotent_flag) {
       DeleteConvertor delete_convertor(table);
       ret = execute_dml(thd, &delete_convertor);
@@ -691,7 +696,8 @@ int ha_duckdb::write_row(uchar *buf) {
       build_duckdb_blob_map(table->field, &m_blob_map);
       m_first_write = false;
     }
-    ret = thd->get_duckdb_context()->append_row_insert(table, &m_blob_map);
+    ret = thd->get_duckdb_context()->append_row_insert(table, &m_blob_map,
+                                                       buffered);
     if (ret == 0) srv_duckdb_status.duckdb_rows_insert_in_batch++;
   }
 
@@ -738,7 +744,10 @@ int ha_duckdb::update_row(const uchar *old_row, uchar *new_row) {
     update_auto_inc_val(update_val);
   }
 
-  if (batch_state == myduck::BatchState::NOT_IN_BATCH) {
+  bool buffered = myduck::sync_is_buffered(thd, table_share->db.str,
+                                           table_share->table_name.str);
+
+  if (!buffered && batch_state == myduck::BatchState::NOT_IN_BATCH) {
     if (idempotent_flag && pk_updated) {
       if (!bitmap_is_set_all(table->write_set)) {
         LogErr(WARNING_LEVEL, ER_DUCKDB,
@@ -773,7 +782,7 @@ int ha_duckdb::update_row(const uchar *old_row, uchar *new_row) {
 
     if (ret == 0) srv_duckdb_status.duckdb_rows_update++;
   } else {
-    ret = thd->get_duckdb_context()->append_row_update(table, old_row);
+    ret = thd->get_duckdb_context()->append_row_update(table, old_row, buffered);
     if (ret == 0) srv_duckdb_status.duckdb_rows_update_in_batch++;
   }
 
@@ -822,12 +831,15 @@ int ha_duckdb::delete_row(const uchar *) {
   assert(batch_state == myduck::BatchState::NOT_IN_BATCH ||
          batch_state == myduck::BatchState::IN_MIX_BATCH);
 
-  if (batch_state == myduck::BatchState::NOT_IN_BATCH) {
+  bool buffered = myduck::sync_is_buffered(thd, table_share->db.str,
+                                           table_share->table_name.str);
+
+  if (!buffered && batch_state == myduck::BatchState::NOT_IN_BATCH) {
     DeleteConvertor convertor(table);
     ret = execute_dml(thd, &convertor);
     if (ret == 0) srv_duckdb_status.duckdb_rows_delete++;
   } else {
-    ret = thd->get_duckdb_context()->append_row_delete(table);
+    ret = thd->get_duckdb_context()->append_row_delete(table, buffered);
     if (ret == 0) srv_duckdb_status.duckdb_rows_delete_in_batch++;
   }
 

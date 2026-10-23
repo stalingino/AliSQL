@@ -1,0 +1,48 @@
+include/master-slave.inc
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+[connection master]
+CREATE TABLE t1 (id INT PRIMARY KEY, c VARCHAR(32)) ENGINE = InnoDB;
+INSERT INTO t1
+WITH RECURSIVE seq(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM seq WHERE i < 100)
+SELECT i, CONCAT('v', i) FROM seq;
+include/rpl_sync.inc
+#
+# Crash after the first committed chunk.
+#
+[connection slave]
+SET GLOBAL debug = '+d,duckdb_sync_crash_after_commit';
+CALL dbms_duckdb.sync_table('test', 't1', 'threads=1;commit_rows=10');
+JOB_ID	MESSAGE
+#	started loading 1 table(s); see dbms_duckdb.sync_status()
+include/rpl_start_server.inc [server_number=2]
+[connection slave]
+state: FAILED
+error: server restarted while the table was loading
+#
+# A FAILED table is reloaded from scratch.
+#
+CALL dbms_duckdb.sync_table('test', 't1', 'threads=2;commit_rows=10');
+JOB_ID	MESSAGE
+#	started loading 1 table(s); see dbms_duckdb.sync_status()
+state: ACTIVE
+include/start_slave.inc
+[connection master]
+INSERT INTO t1 VALUES (500, 'after');
+include/rpl_sync.inc
+[connection slave]
+SELECT COUNT(*), COUNT(DISTINCT id), SUM(id) FROM t1;
+COUNT(*)	COUNT(DISTINCT id)	SUM(id)
+101	101	5550
+include/diff_tables.inc [master:t1, slave:t1]
+#
+# Cleanup
+#
+CALL dbms_duckdb.unsync_table('test', 't1');
+SET sql_log_bin = 0;
+DROP TABLE t1;
+SET sql_log_bin = 1;
+[connection master]
+DROP TABLE t1;
+include/rpl_end.inc

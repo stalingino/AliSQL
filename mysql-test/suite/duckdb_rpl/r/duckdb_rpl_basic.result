@@ -135,10 +135,9 @@ master-bin.000002	#	Query	#	#	use `test`; DROP TABLE IF EXISTS `db1`.`t1` /* gen
 master-bin.000002	#	Query	#	#	use `test`; CREATE TABLE IF NOT EXISTS t2(c1 INT) ENGINE=DuckDB
 include/rpl_sync.inc
 [connection slave]
-SELECT @@GLOBAL.gtid_executed;
-@@GLOBAL.gtid_executed
-MASTER_UUID:1-11,
-SLAVE_UUID:1
+SELECT GTID_SUBTRACT(@@GLOBAL.gtid_executed, 'SLAVE_UUID:1-1000000') AS from_master, GTID_SUBTRACT(@@GLOBAL.gtid_executed, 'MASTER_UUID:1-1000000') AS local;
+from_master	local
+MASTER_UUID:1-11	SLAVE_UUID:1
 include/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 slave-bin.000002	#	Query	#	#	DROP DATABASE IF EXISTS db1

@@ -94,6 +94,7 @@
 #include "sql/debug_sync.h"  // DEBUG_SYNC
 #include "sql/derror.h"      // ER_THD
 #include "sql/discrete_interval.h"
+#include "sql/duckdb/duckdb_sync.h"
 #include "sql/error_handler.h"  // Strict_error_handler
 #include "sql/events.h"         // Events
 #include "sql/field.h"
@@ -285,6 +286,18 @@ bool command_satisfy_acl_cache_requirement(unsigned command) {
 */
 bool all_tables_not_ok(THD *thd, Table_ref *tables) {
   Rpl_filter *rpl_filter = thd->rli_slave->rpl_filter;
+
+  /* Tables registered by dbms_duckdb.sync_table() override the filters. */
+  if (tables && !thd->sp_runtime_ctx) {
+    switch (myduck::sync_filter_decision(thd, tables)) {
+      case myduck::Sync_decision::EXCLUDE:
+        return true;
+      case myduck::Sync_decision::INCLUDE:
+        return false;
+      case myduck::Sync_decision::NO_OPINION:
+        break;
+    }
+  }
 
   return rpl_filter->is_on() && tables && !thd->sp_runtime_ctx &&
          !rpl_filter->tables_ok(thd->db().str, tables);

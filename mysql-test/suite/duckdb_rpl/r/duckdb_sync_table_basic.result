@@ -1,0 +1,838 @@
+include/master-slave.inc
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+[connection master]
+#
+# Source tables that the replica filters out.
+#
+CREATE TABLE t1 (id INT PRIMARY KEY, c VARCHAR(32), d DATETIME(3),
+ts TIMESTAMP NULL, n DECIMAL(10,2), b VARBINARY(8),
+e ENUM('x','y')) ENGINE = InnoDB;
+INSERT INTO t1
+WITH RECURSIVE seq(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM seq WHERE i < 1000)
+SELECT i, CONCAT('row', i), '2024-01-02 03:04:05.678', '2024-06-01 12:00:00',
+i / 3, UNHEX('00FF'), IF(i % 2, 'x', 'y') FROM seq;
+Warnings:
+Note	1265	Data truncated for column 'n' at row 1
+Note	1265	Data truncated for column 'n' at row 2
+Note	1265	Data truncated for column 'n' at row 4
+Note	1265	Data truncated for column 'n' at row 5
+Note	1265	Data truncated for column 'n' at row 7
+Note	1265	Data truncated for column 'n' at row 8
+Note	1265	Data truncated for column 'n' at row 10
+Note	1265	Data truncated for column 'n' at row 11
+Note	1265	Data truncated for column 'n' at row 13
+Note	1265	Data truncated for column 'n' at row 14
+Note	1265	Data truncated for column 'n' at row 16
+Note	1265	Data truncated for column 'n' at row 17
+Note	1265	Data truncated for column 'n' at row 19
+Note	1265	Data truncated for column 'n' at row 20
+Note	1265	Data truncated for column 'n' at row 22
+Note	1265	Data truncated for column 'n' at row 23
+Note	1265	Data truncated for column 'n' at row 25
+Note	1265	Data truncated for column 'n' at row 26
+Note	1265	Data truncated for column 'n' at row 28
+Note	1265	Data truncated for column 'n' at row 29
+Note	1265	Data truncated for column 'n' at row 31
+Note	1265	Data truncated for column 'n' at row 32
+Note	1265	Data truncated for column 'n' at row 34
+Note	1265	Data truncated for column 'n' at row 35
+Note	1265	Data truncated for column 'n' at row 37
+Note	1265	Data truncated for column 'n' at row 38
+Note	1265	Data truncated for column 'n' at row 40
+Note	1265	Data truncated for column 'n' at row 41
+Note	1265	Data truncated for column 'n' at row 43
+Note	1265	Data truncated for column 'n' at row 44
+Note	1265	Data truncated for column 'n' at row 46
+Note	1265	Data truncated for column 'n' at row 47
+Note	1265	Data truncated for column 'n' at row 49
+Note	1265	Data truncated for column 'n' at row 50
+Note	1265	Data truncated for column 'n' at row 52
+Note	1265	Data truncated for column 'n' at row 53
+Note	1265	Data truncated for column 'n' at row 55
+Note	1265	Data truncated for column 'n' at row 56
+Note	1265	Data truncated for column 'n' at row 58
+Note	1265	Data truncated for column 'n' at row 59
+Note	1265	Data truncated for column 'n' at row 61
+Note	1265	Data truncated for column 'n' at row 62
+Note	1265	Data truncated for column 'n' at row 64
+Note	1265	Data truncated for column 'n' at row 65
+Note	1265	Data truncated for column 'n' at row 67
+Note	1265	Data truncated for column 'n' at row 68
+Note	1265	Data truncated for column 'n' at row 70
+Note	1265	Data truncated for column 'n' at row 71
+Note	1265	Data truncated for column 'n' at row 73
+Note	1265	Data truncated for column 'n' at row 74
+Note	1265	Data truncated for column 'n' at row 76
+Note	1265	Data truncated for column 'n' at row 77
+Note	1265	Data truncated for column 'n' at row 79
+Note	1265	Data truncated for column 'n' at row 80
+Note	1265	Data truncated for column 'n' at row 82
+Note	1265	Data truncated for column 'n' at row 83
+Note	1265	Data truncated for column 'n' at row 85
+Note	1265	Data truncated for column 'n' at row 86
+Note	1265	Data truncated for column 'n' at row 88
+Note	1265	Data truncated for column 'n' at row 89
+Note	1265	Data truncated for column 'n' at row 91
+Note	1265	Data truncated for column 'n' at row 92
+Note	1265	Data truncated for column 'n' at row 94
+Note	1265	Data truncated for column 'n' at row 95
+Note	1265	Data truncated for column 'n' at row 97
+Note	1265	Data truncated for column 'n' at row 98
+Note	1265	Data truncated for column 'n' at row 100
+Note	1265	Data truncated for column 'n' at row 101
+Note	1265	Data truncated for column 'n' at row 103
+Note	1265	Data truncated for column 'n' at row 104
+Note	1265	Data truncated for column 'n' at row 106
+Note	1265	Data truncated for column 'n' at row 107
+Note	1265	Data truncated for column 'n' at row 109
+Note	1265	Data truncated for column 'n' at row 110
+Note	1265	Data truncated for column 'n' at row 112
+Note	1265	Data truncated for column 'n' at row 113
+Note	1265	Data truncated for column 'n' at row 115
+Note	1265	Data truncated for column 'n' at row 116
+Note	1265	Data truncated for column 'n' at row 118
+Note	1265	Data truncated for column 'n' at row 119
+Note	1265	Data truncated for column 'n' at row 121
+Note	1265	Data truncated for column 'n' at row 122
+Note	1265	Data truncated for column 'n' at row 124
+Note	1265	Data truncated for column 'n' at row 125
+Note	1265	Data truncated for column 'n' at row 127
+Note	1265	Data truncated for column 'n' at row 128
+Note	1265	Data truncated for column 'n' at row 130
+Note	1265	Data truncated for column 'n' at row 131
+Note	1265	Data truncated for column 'n' at row 133
+Note	1265	Data truncated for column 'n' at row 134
+Note	1265	Data truncated for column 'n' at row 136
+Note	1265	Data truncated for column 'n' at row 137
+Note	1265	Data truncated for column 'n' at row 139
+Note	1265	Data truncated for column 'n' at row 140
+Note	1265	Data truncated for column 'n' at row 142
+Note	1265	Data truncated for column 'n' at row 143
+Note	1265	Data truncated for column 'n' at row 145
+Note	1265	Data truncated for column 'n' at row 146
+Note	1265	Data truncated for column 'n' at row 148
+Note	1265	Data truncated for column 'n' at row 149
+Note	1265	Data truncated for column 'n' at row 151
+Note	1265	Data truncated for column 'n' at row 152
+Note	1265	Data truncated for column 'n' at row 154
+Note	1265	Data truncated for column 'n' at row 155
+Note	1265	Data truncated for column 'n' at row 157
+Note	1265	Data truncated for column 'n' at row 158
+Note	1265	Data truncated for column 'n' at row 160
+Note	1265	Data truncated for column 'n' at row 161
+Note	1265	Data truncated for column 'n' at row 163
+Note	1265	Data truncated for column 'n' at row 164
+Note	1265	Data truncated for column 'n' at row 166
+Note	1265	Data truncated for column 'n' at row 167
+Note	1265	Data truncated for column 'n' at row 169
+Note	1265	Data truncated for column 'n' at row 170
+Note	1265	Data truncated for column 'n' at row 172
+Note	1265	Data truncated for column 'n' at row 173
+Note	1265	Data truncated for column 'n' at row 175
+Note	1265	Data truncated for column 'n' at row 176
+Note	1265	Data truncated for column 'n' at row 178
+Note	1265	Data truncated for column 'n' at row 179
+Note	1265	Data truncated for column 'n' at row 181
+Note	1265	Data truncated for column 'n' at row 182
+Note	1265	Data truncated for column 'n' at row 184
+Note	1265	Data truncated for column 'n' at row 185
+Note	1265	Data truncated for column 'n' at row 187
+Note	1265	Data truncated for column 'n' at row 188
+Note	1265	Data truncated for column 'n' at row 190
+Note	1265	Data truncated for column 'n' at row 191
+Note	1265	Data truncated for column 'n' at row 193
+Note	1265	Data truncated for column 'n' at row 194
+Note	1265	Data truncated for column 'n' at row 196
+Note	1265	Data truncated for column 'n' at row 197
+Note	1265	Data truncated for column 'n' at row 199
+Note	1265	Data truncated for column 'n' at row 200
+Note	1265	Data truncated for column 'n' at row 202
+Note	1265	Data truncated for column 'n' at row 203
+Note	1265	Data truncated for column 'n' at row 205
+Note	1265	Data truncated for column 'n' at row 206
+Note	1265	Data truncated for column 'n' at row 208
+Note	1265	Data truncated for column 'n' at row 209
+Note	1265	Data truncated for column 'n' at row 211
+Note	1265	Data truncated for column 'n' at row 212
+Note	1265	Data truncated for column 'n' at row 214
+Note	1265	Data truncated for column 'n' at row 215
+Note	1265	Data truncated for column 'n' at row 217
+Note	1265	Data truncated for column 'n' at row 218
+Note	1265	Data truncated for column 'n' at row 220
+Note	1265	Data truncated for column 'n' at row 221
+Note	1265	Data truncated for column 'n' at row 223
+Note	1265	Data truncated for column 'n' at row 224
+Note	1265	Data truncated for column 'n' at row 226
+Note	1265	Data truncated for column 'n' at row 227
+Note	1265	Data truncated for column 'n' at row 229
+Note	1265	Data truncated for column 'n' at row 230
+Note	1265	Data truncated for column 'n' at row 232
+Note	1265	Data truncated for column 'n' at row 233
+Note	1265	Data truncated for column 'n' at row 235
+Note	1265	Data truncated for column 'n' at row 236
+Note	1265	Data truncated for column 'n' at row 238
+Note	1265	Data truncated for column 'n' at row 239
+Note	1265	Data truncated for column 'n' at row 241
+Note	1265	Data truncated for column 'n' at row 242
+Note	1265	Data truncated for column 'n' at row 244
+Note	1265	Data truncated for column 'n' at row 245
+Note	1265	Data truncated for column 'n' at row 247
+Note	1265	Data truncated for column 'n' at row 248
+Note	1265	Data truncated for column 'n' at row 250
+Note	1265	Data truncated for column 'n' at row 251
+Note	1265	Data truncated for column 'n' at row 253
+Note	1265	Data truncated for column 'n' at row 254
+Note	1265	Data truncated for column 'n' at row 256
+Note	1265	Data truncated for column 'n' at row 257
+Note	1265	Data truncated for column 'n' at row 259
+Note	1265	Data truncated for column 'n' at row 260
+Note	1265	Data truncated for column 'n' at row 262
+Note	1265	Data truncated for column 'n' at row 263
+Note	1265	Data truncated for column 'n' at row 265
+Note	1265	Data truncated for column 'n' at row 266
+Note	1265	Data truncated for column 'n' at row 268
+Note	1265	Data truncated for column 'n' at row 269
+Note	1265	Data truncated for column 'n' at row 271
+Note	1265	Data truncated for column 'n' at row 272
+Note	1265	Data truncated for column 'n' at row 274
+Note	1265	Data truncated for column 'n' at row 275
+Note	1265	Data truncated for column 'n' at row 277
+Note	1265	Data truncated for column 'n' at row 278
+Note	1265	Data truncated for column 'n' at row 280
+Note	1265	Data truncated for column 'n' at row 281
+Note	1265	Data truncated for column 'n' at row 283
+Note	1265	Data truncated for column 'n' at row 284
+Note	1265	Data truncated for column 'n' at row 286
+Note	1265	Data truncated for column 'n' at row 287
+Note	1265	Data truncated for column 'n' at row 289
+Note	1265	Data truncated for column 'n' at row 290
+Note	1265	Data truncated for column 'n' at row 292
+Note	1265	Data truncated for column 'n' at row 293
+Note	1265	Data truncated for column 'n' at row 295
+Note	1265	Data truncated for column 'n' at row 296
+Note	1265	Data truncated for column 'n' at row 298
+Note	1265	Data truncated for column 'n' at row 299
+Note	1265	Data truncated for column 'n' at row 301
+Note	1265	Data truncated for column 'n' at row 302
+Note	1265	Data truncated for column 'n' at row 304
+Note	1265	Data truncated for column 'n' at row 305
+Note	1265	Data truncated for column 'n' at row 307
+Note	1265	Data truncated for column 'n' at row 308
+Note	1265	Data truncated for column 'n' at row 310
+Note	1265	Data truncated for column 'n' at row 311
+Note	1265	Data truncated for column 'n' at row 313
+Note	1265	Data truncated for column 'n' at row 314
+Note	1265	Data truncated for column 'n' at row 316
+Note	1265	Data truncated for column 'n' at row 317
+Note	1265	Data truncated for column 'n' at row 319
+Note	1265	Data truncated for column 'n' at row 320
+Note	1265	Data truncated for column 'n' at row 322
+Note	1265	Data truncated for column 'n' at row 323
+Note	1265	Data truncated for column 'n' at row 325
+Note	1265	Data truncated for column 'n' at row 326
+Note	1265	Data truncated for column 'n' at row 328
+Note	1265	Data truncated for column 'n' at row 329
+Note	1265	Data truncated for column 'n' at row 331
+Note	1265	Data truncated for column 'n' at row 332
+Note	1265	Data truncated for column 'n' at row 334
+Note	1265	Data truncated for column 'n' at row 335
+Note	1265	Data truncated for column 'n' at row 337
+Note	1265	Data truncated for column 'n' at row 338
+Note	1265	Data truncated for column 'n' at row 340
+Note	1265	Data truncated for column 'n' at row 341
+Note	1265	Data truncated for column 'n' at row 343
+Note	1265	Data truncated for column 'n' at row 344
+Note	1265	Data truncated for column 'n' at row 346
+Note	1265	Data truncated for column 'n' at row 347
+Note	1265	Data truncated for column 'n' at row 349
+Note	1265	Data truncated for column 'n' at row 350
+Note	1265	Data truncated for column 'n' at row 352
+Note	1265	Data truncated for column 'n' at row 353
+Note	1265	Data truncated for column 'n' at row 355
+Note	1265	Data truncated for column 'n' at row 356
+Note	1265	Data truncated for column 'n' at row 358
+Note	1265	Data truncated for column 'n' at row 359
+Note	1265	Data truncated for column 'n' at row 361
+Note	1265	Data truncated for column 'n' at row 362
+Note	1265	Data truncated for column 'n' at row 364
+Note	1265	Data truncated for column 'n' at row 365
+Note	1265	Data truncated for column 'n' at row 367
+Note	1265	Data truncated for column 'n' at row 368
+Note	1265	Data truncated for column 'n' at row 370
+Note	1265	Data truncated for column 'n' at row 371
+Note	1265	Data truncated for column 'n' at row 373
+Note	1265	Data truncated for column 'n' at row 374
+Note	1265	Data truncated for column 'n' at row 376
+Note	1265	Data truncated for column 'n' at row 377
+Note	1265	Data truncated for column 'n' at row 379
+Note	1265	Data truncated for column 'n' at row 380
+Note	1265	Data truncated for column 'n' at row 382
+Note	1265	Data truncated for column 'n' at row 383
+Note	1265	Data truncated for column 'n' at row 385
+Note	1265	Data truncated for column 'n' at row 386
+Note	1265	Data truncated for column 'n' at row 388
+Note	1265	Data truncated for column 'n' at row 389
+Note	1265	Data truncated for column 'n' at row 391
+Note	1265	Data truncated for column 'n' at row 392
+Note	1265	Data truncated for column 'n' at row 394
+Note	1265	Data truncated for column 'n' at row 395
+Note	1265	Data truncated for column 'n' at row 397
+Note	1265	Data truncated for column 'n' at row 398
+Note	1265	Data truncated for column 'n' at row 400
+Note	1265	Data truncated for column 'n' at row 401
+Note	1265	Data truncated for column 'n' at row 403
+Note	1265	Data truncated for column 'n' at row 404
+Note	1265	Data truncated for column 'n' at row 406
+Note	1265	Data truncated for column 'n' at row 407
+Note	1265	Data truncated for column 'n' at row 409
+Note	1265	Data truncated for column 'n' at row 410
+Note	1265	Data truncated for column 'n' at row 412
+Note	1265	Data truncated for column 'n' at row 413
+Note	1265	Data truncated for column 'n' at row 415
+Note	1265	Data truncated for column 'n' at row 416
+Note	1265	Data truncated for column 'n' at row 418
+Note	1265	Data truncated for column 'n' at row 419
+Note	1265	Data truncated for column 'n' at row 421
+Note	1265	Data truncated for column 'n' at row 422
+Note	1265	Data truncated for column 'n' at row 424
+Note	1265	Data truncated for column 'n' at row 425
+Note	1265	Data truncated for column 'n' at row 427
+Note	1265	Data truncated for column 'n' at row 428
+Note	1265	Data truncated for column 'n' at row 430
+Note	1265	Data truncated for column 'n' at row 431
+Note	1265	Data truncated for column 'n' at row 433
+Note	1265	Data truncated for column 'n' at row 434
+Note	1265	Data truncated for column 'n' at row 436
+Note	1265	Data truncated for column 'n' at row 437
+Note	1265	Data truncated for column 'n' at row 439
+Note	1265	Data truncated for column 'n' at row 440
+Note	1265	Data truncated for column 'n' at row 442
+Note	1265	Data truncated for column 'n' at row 443
+Note	1265	Data truncated for column 'n' at row 445
+Note	1265	Data truncated for column 'n' at row 446
+Note	1265	Data truncated for column 'n' at row 448
+Note	1265	Data truncated for column 'n' at row 449
+Note	1265	Data truncated for column 'n' at row 451
+Note	1265	Data truncated for column 'n' at row 452
+Note	1265	Data truncated for column 'n' at row 454
+Note	1265	Data truncated for column 'n' at row 455
+Note	1265	Data truncated for column 'n' at row 457
+Note	1265	Data truncated for column 'n' at row 458
+Note	1265	Data truncated for column 'n' at row 460
+Note	1265	Data truncated for column 'n' at row 461
+Note	1265	Data truncated for column 'n' at row 463
+Note	1265	Data truncated for column 'n' at row 464
+Note	1265	Data truncated for column 'n' at row 466
+Note	1265	Data truncated for column 'n' at row 467
+Note	1265	Data truncated for column 'n' at row 469
+Note	1265	Data truncated for column 'n' at row 470
+Note	1265	Data truncated for column 'n' at row 472
+Note	1265	Data truncated for column 'n' at row 473
+Note	1265	Data truncated for column 'n' at row 475
+Note	1265	Data truncated for column 'n' at row 476
+Note	1265	Data truncated for column 'n' at row 478
+Note	1265	Data truncated for column 'n' at row 479
+Note	1265	Data truncated for column 'n' at row 481
+Note	1265	Data truncated for column 'n' at row 482
+Note	1265	Data truncated for column 'n' at row 484
+Note	1265	Data truncated for column 'n' at row 485
+Note	1265	Data truncated for column 'n' at row 487
+Note	1265	Data truncated for column 'n' at row 488
+Note	1265	Data truncated for column 'n' at row 490
+Note	1265	Data truncated for column 'n' at row 491
+Note	1265	Data truncated for column 'n' at row 493
+Note	1265	Data truncated for column 'n' at row 494
+Note	1265	Data truncated for column 'n' at row 496
+Note	1265	Data truncated for column 'n' at row 497
+Note	1265	Data truncated for column 'n' at row 499
+Note	1265	Data truncated for column 'n' at row 500
+Note	1265	Data truncated for column 'n' at row 502
+Note	1265	Data truncated for column 'n' at row 503
+Note	1265	Data truncated for column 'n' at row 505
+Note	1265	Data truncated for column 'n' at row 506
+Note	1265	Data truncated for column 'n' at row 508
+Note	1265	Data truncated for column 'n' at row 509
+Note	1265	Data truncated for column 'n' at row 511
+Note	1265	Data truncated for column 'n' at row 512
+Note	1265	Data truncated for column 'n' at row 514
+Note	1265	Data truncated for column 'n' at row 515
+Note	1265	Data truncated for column 'n' at row 517
+Note	1265	Data truncated for column 'n' at row 518
+Note	1265	Data truncated for column 'n' at row 520
+Note	1265	Data truncated for column 'n' at row 521
+Note	1265	Data truncated for column 'n' at row 523
+Note	1265	Data truncated for column 'n' at row 524
+Note	1265	Data truncated for column 'n' at row 526
+Note	1265	Data truncated for column 'n' at row 527
+Note	1265	Data truncated for column 'n' at row 529
+Note	1265	Data truncated for column 'n' at row 530
+Note	1265	Data truncated for column 'n' at row 532
+Note	1265	Data truncated for column 'n' at row 533
+Note	1265	Data truncated for column 'n' at row 535
+Note	1265	Data truncated for column 'n' at row 536
+Note	1265	Data truncated for column 'n' at row 538
+Note	1265	Data truncated for column 'n' at row 539
+Note	1265	Data truncated for column 'n' at row 541
+Note	1265	Data truncated for column 'n' at row 542
+Note	1265	Data truncated for column 'n' at row 544
+Note	1265	Data truncated for column 'n' at row 545
+Note	1265	Data truncated for column 'n' at row 547
+Note	1265	Data truncated for column 'n' at row 548
+Note	1265	Data truncated for column 'n' at row 550
+Note	1265	Data truncated for column 'n' at row 551
+Note	1265	Data truncated for column 'n' at row 553
+Note	1265	Data truncated for column 'n' at row 554
+Note	1265	Data truncated for column 'n' at row 556
+Note	1265	Data truncated for column 'n' at row 557
+Note	1265	Data truncated for column 'n' at row 559
+Note	1265	Data truncated for column 'n' at row 560
+Note	1265	Data truncated for column 'n' at row 562
+Note	1265	Data truncated for column 'n' at row 563
+Note	1265	Data truncated for column 'n' at row 565
+Note	1265	Data truncated for column 'n' at row 566
+Note	1265	Data truncated for column 'n' at row 568
+Note	1265	Data truncated for column 'n' at row 569
+Note	1265	Data truncated for column 'n' at row 571
+Note	1265	Data truncated for column 'n' at row 572
+Note	1265	Data truncated for column 'n' at row 574
+Note	1265	Data truncated for column 'n' at row 575
+Note	1265	Data truncated for column 'n' at row 577
+Note	1265	Data truncated for column 'n' at row 578
+Note	1265	Data truncated for column 'n' at row 580
+Note	1265	Data truncated for column 'n' at row 581
+Note	1265	Data truncated for column 'n' at row 583
+Note	1265	Data truncated for column 'n' at row 584
+Note	1265	Data truncated for column 'n' at row 586
+Note	1265	Data truncated for column 'n' at row 587
+Note	1265	Data truncated for column 'n' at row 589
+Note	1265	Data truncated for column 'n' at row 590
+Note	1265	Data truncated for column 'n' at row 592
+Note	1265	Data truncated for column 'n' at row 593
+Note	1265	Data truncated for column 'n' at row 595
+Note	1265	Data truncated for column 'n' at row 596
+Note	1265	Data truncated for column 'n' at row 598
+Note	1265	Data truncated for column 'n' at row 599
+Note	1265	Data truncated for column 'n' at row 601
+Note	1265	Data truncated for column 'n' at row 602
+Note	1265	Data truncated for column 'n' at row 604
+Note	1265	Data truncated for column 'n' at row 605
+Note	1265	Data truncated for column 'n' at row 607
+Note	1265	Data truncated for column 'n' at row 608
+Note	1265	Data truncated for column 'n' at row 610
+Note	1265	Data truncated for column 'n' at row 611
+Note	1265	Data truncated for column 'n' at row 613
+Note	1265	Data truncated for column 'n' at row 614
+Note	1265	Data truncated for column 'n' at row 616
+Note	1265	Data truncated for column 'n' at row 617
+Note	1265	Data truncated for column 'n' at row 619
+Note	1265	Data truncated for column 'n' at row 620
+Note	1265	Data truncated for column 'n' at row 622
+Note	1265	Data truncated for column 'n' at row 623
+Note	1265	Data truncated for column 'n' at row 625
+Note	1265	Data truncated for column 'n' at row 626
+Note	1265	Data truncated for column 'n' at row 628
+Note	1265	Data truncated for column 'n' at row 629
+Note	1265	Data truncated for column 'n' at row 631
+Note	1265	Data truncated for column 'n' at row 632
+Note	1265	Data truncated for column 'n' at row 634
+Note	1265	Data truncated for column 'n' at row 635
+Note	1265	Data truncated for column 'n' at row 637
+Note	1265	Data truncated for column 'n' at row 638
+Note	1265	Data truncated for column 'n' at row 640
+Note	1265	Data truncated for column 'n' at row 641
+Note	1265	Data truncated for column 'n' at row 643
+Note	1265	Data truncated for column 'n' at row 644
+Note	1265	Data truncated for column 'n' at row 646
+Note	1265	Data truncated for column 'n' at row 647
+Note	1265	Data truncated for column 'n' at row 649
+Note	1265	Data truncated for column 'n' at row 650
+Note	1265	Data truncated for column 'n' at row 652
+Note	1265	Data truncated for column 'n' at row 653
+Note	1265	Data truncated for column 'n' at row 655
+Note	1265	Data truncated for column 'n' at row 656
+Note	1265	Data truncated for column 'n' at row 658
+Note	1265	Data truncated for column 'n' at row 659
+Note	1265	Data truncated for column 'n' at row 661
+Note	1265	Data truncated for column 'n' at row 662
+Note	1265	Data truncated for column 'n' at row 664
+Note	1265	Data truncated for column 'n' at row 665
+Note	1265	Data truncated for column 'n' at row 667
+Note	1265	Data truncated for column 'n' at row 668
+Note	1265	Data truncated for column 'n' at row 670
+Note	1265	Data truncated for column 'n' at row 671
+Note	1265	Data truncated for column 'n' at row 673
+Note	1265	Data truncated for column 'n' at row 674
+Note	1265	Data truncated for column 'n' at row 676
+Note	1265	Data truncated for column 'n' at row 677
+Note	1265	Data truncated for column 'n' at row 679
+Note	1265	Data truncated for column 'n' at row 680
+Note	1265	Data truncated for column 'n' at row 682
+Note	1265	Data truncated for column 'n' at row 683
+Note	1265	Data truncated for column 'n' at row 685
+Note	1265	Data truncated for column 'n' at row 686
+Note	1265	Data truncated for column 'n' at row 688
+Note	1265	Data truncated for column 'n' at row 689
+Note	1265	Data truncated for column 'n' at row 691
+Note	1265	Data truncated for column 'n' at row 692
+Note	1265	Data truncated for column 'n' at row 694
+Note	1265	Data truncated for column 'n' at row 695
+Note	1265	Data truncated for column 'n' at row 697
+Note	1265	Data truncated for column 'n' at row 698
+Note	1265	Data truncated for column 'n' at row 700
+Note	1265	Data truncated for column 'n' at row 701
+Note	1265	Data truncated for column 'n' at row 703
+Note	1265	Data truncated for column 'n' at row 704
+Note	1265	Data truncated for column 'n' at row 706
+Note	1265	Data truncated for column 'n' at row 707
+Note	1265	Data truncated for column 'n' at row 709
+Note	1265	Data truncated for column 'n' at row 710
+Note	1265	Data truncated for column 'n' at row 712
+Note	1265	Data truncated for column 'n' at row 713
+Note	1265	Data truncated for column 'n' at row 715
+Note	1265	Data truncated for column 'n' at row 716
+Note	1265	Data truncated for column 'n' at row 718
+Note	1265	Data truncated for column 'n' at row 719
+Note	1265	Data truncated for column 'n' at row 721
+Note	1265	Data truncated for column 'n' at row 722
+Note	1265	Data truncated for column 'n' at row 724
+Note	1265	Data truncated for column 'n' at row 725
+Note	1265	Data truncated for column 'n' at row 727
+Note	1265	Data truncated for column 'n' at row 728
+Note	1265	Data truncated for column 'n' at row 730
+Note	1265	Data truncated for column 'n' at row 731
+Note	1265	Data truncated for column 'n' at row 733
+Note	1265	Data truncated for column 'n' at row 734
+Note	1265	Data truncated for column 'n' at row 736
+Note	1265	Data truncated for column 'n' at row 737
+Note	1265	Data truncated for column 'n' at row 739
+Note	1265	Data truncated for column 'n' at row 740
+Note	1265	Data truncated for column 'n' at row 742
+Note	1265	Data truncated for column 'n' at row 743
+Note	1265	Data truncated for column 'n' at row 745
+Note	1265	Data truncated for column 'n' at row 746
+Note	1265	Data truncated for column 'n' at row 748
+Note	1265	Data truncated for column 'n' at row 749
+Note	1265	Data truncated for column 'n' at row 751
+Note	1265	Data truncated for column 'n' at row 752
+Note	1265	Data truncated for column 'n' at row 754
+Note	1265	Data truncated for column 'n' at row 755
+Note	1265	Data truncated for column 'n' at row 757
+Note	1265	Data truncated for column 'n' at row 758
+Note	1265	Data truncated for column 'n' at row 760
+Note	1265	Data truncated for column 'n' at row 761
+Note	1265	Data truncated for column 'n' at row 763
+Note	1265	Data truncated for column 'n' at row 764
+Note	1265	Data truncated for column 'n' at row 766
+Note	1265	Data truncated for column 'n' at row 767
+Note	1265	Data truncated for column 'n' at row 769
+Note	1265	Data truncated for column 'n' at row 770
+Note	1265	Data truncated for column 'n' at row 772
+Note	1265	Data truncated for column 'n' at row 773
+Note	1265	Data truncated for column 'n' at row 775
+Note	1265	Data truncated for column 'n' at row 776
+Note	1265	Data truncated for column 'n' at row 778
+Note	1265	Data truncated for column 'n' at row 779
+Note	1265	Data truncated for column 'n' at row 781
+Note	1265	Data truncated for column 'n' at row 782
+Note	1265	Data truncated for column 'n' at row 784
+Note	1265	Data truncated for column 'n' at row 785
+Note	1265	Data truncated for column 'n' at row 787
+Note	1265	Data truncated for column 'n' at row 788
+Note	1265	Data truncated for column 'n' at row 790
+Note	1265	Data truncated for column 'n' at row 791
+Note	1265	Data truncated for column 'n' at row 793
+Note	1265	Data truncated for column 'n' at row 794
+Note	1265	Data truncated for column 'n' at row 796
+Note	1265	Data truncated for column 'n' at row 797
+Note	1265	Data truncated for column 'n' at row 799
+Note	1265	Data truncated for column 'n' at row 800
+Note	1265	Data truncated for column 'n' at row 802
+Note	1265	Data truncated for column 'n' at row 803
+Note	1265	Data truncated for column 'n' at row 805
+Note	1265	Data truncated for column 'n' at row 806
+Note	1265	Data truncated for column 'n' at row 808
+Note	1265	Data truncated for column 'n' at row 809
+Note	1265	Data truncated for column 'n' at row 811
+Note	1265	Data truncated for column 'n' at row 812
+Note	1265	Data truncated for column 'n' at row 814
+Note	1265	Data truncated for column 'n' at row 815
+Note	1265	Data truncated for column 'n' at row 817
+Note	1265	Data truncated for column 'n' at row 818
+Note	1265	Data truncated for column 'n' at row 820
+Note	1265	Data truncated for column 'n' at row 821
+Note	1265	Data truncated for column 'n' at row 823
+Note	1265	Data truncated for column 'n' at row 824
+Note	1265	Data truncated for column 'n' at row 826
+Note	1265	Data truncated for column 'n' at row 827
+Note	1265	Data truncated for column 'n' at row 829
+Note	1265	Data truncated for column 'n' at row 830
+Note	1265	Data truncated for column 'n' at row 832
+Note	1265	Data truncated for column 'n' at row 833
+Note	1265	Data truncated for column 'n' at row 835
+Note	1265	Data truncated for column 'n' at row 836
+Note	1265	Data truncated for column 'n' at row 838
+Note	1265	Data truncated for column 'n' at row 839
+Note	1265	Data truncated for column 'n' at row 841
+Note	1265	Data truncated for column 'n' at row 842
+Note	1265	Data truncated for column 'n' at row 844
+Note	1265	Data truncated for column 'n' at row 845
+Note	1265	Data truncated for column 'n' at row 847
+Note	1265	Data truncated for column 'n' at row 848
+Note	1265	Data truncated for column 'n' at row 850
+Note	1265	Data truncated for column 'n' at row 851
+Note	1265	Data truncated for column 'n' at row 853
+Note	1265	Data truncated for column 'n' at row 854
+Note	1265	Data truncated for column 'n' at row 856
+Note	1265	Data truncated for column 'n' at row 857
+Note	1265	Data truncated for column 'n' at row 859
+Note	1265	Data truncated for column 'n' at row 860
+Note	1265	Data truncated for column 'n' at row 862
+Note	1265	Data truncated for column 'n' at row 863
+Note	1265	Data truncated for column 'n' at row 865
+Note	1265	Data truncated for column 'n' at row 866
+Note	1265	Data truncated for column 'n' at row 868
+Note	1265	Data truncated for column 'n' at row 869
+Note	1265	Data truncated for column 'n' at row 871
+Note	1265	Data truncated for column 'n' at row 872
+Note	1265	Data truncated for column 'n' at row 874
+Note	1265	Data truncated for column 'n' at row 875
+Note	1265	Data truncated for column 'n' at row 877
+Note	1265	Data truncated for column 'n' at row 878
+Note	1265	Data truncated for column 'n' at row 880
+Note	1265	Data truncated for column 'n' at row 881
+Note	1265	Data truncated for column 'n' at row 883
+Note	1265	Data truncated for column 'n' at row 884
+Note	1265	Data truncated for column 'n' at row 886
+Note	1265	Data truncated for column 'n' at row 887
+Note	1265	Data truncated for column 'n' at row 889
+Note	1265	Data truncated for column 'n' at row 890
+Note	1265	Data truncated for column 'n' at row 892
+Note	1265	Data truncated for column 'n' at row 893
+Note	1265	Data truncated for column 'n' at row 895
+Note	1265	Data truncated for column 'n' at row 896
+Note	1265	Data truncated for column 'n' at row 898
+Note	1265	Data truncated for column 'n' at row 899
+Note	1265	Data truncated for column 'n' at row 901
+Note	1265	Data truncated for column 'n' at row 902
+Note	1265	Data truncated for column 'n' at row 904
+Note	1265	Data truncated for column 'n' at row 905
+Note	1265	Data truncated for column 'n' at row 907
+Note	1265	Data truncated for column 'n' at row 908
+Note	1265	Data truncated for column 'n' at row 910
+Note	1265	Data truncated for column 'n' at row 911
+Note	1265	Data truncated for column 'n' at row 913
+Note	1265	Data truncated for column 'n' at row 914
+Note	1265	Data truncated for column 'n' at row 916
+Note	1265	Data truncated for column 'n' at row 917
+Note	1265	Data truncated for column 'n' at row 919
+Note	1265	Data truncated for column 'n' at row 920
+Note	1265	Data truncated for column 'n' at row 922
+Note	1265	Data truncated for column 'n' at row 923
+Note	1265	Data truncated for column 'n' at row 925
+Note	1265	Data truncated for column 'n' at row 926
+Note	1265	Data truncated for column 'n' at row 928
+Note	1265	Data truncated for column 'n' at row 929
+Note	1265	Data truncated for column 'n' at row 931
+Note	1265	Data truncated for column 'n' at row 932
+Note	1265	Data truncated for column 'n' at row 934
+Note	1265	Data truncated for column 'n' at row 935
+Note	1265	Data truncated for column 'n' at row 937
+Note	1265	Data truncated for column 'n' at row 938
+Note	1265	Data truncated for column 'n' at row 940
+Note	1265	Data truncated for column 'n' at row 941
+Note	1265	Data truncated for column 'n' at row 943
+Note	1265	Data truncated for column 'n' at row 944
+Note	1265	Data truncated for column 'n' at row 946
+Note	1265	Data truncated for column 'n' at row 947
+Note	1265	Data truncated for column 'n' at row 949
+Note	1265	Data truncated for column 'n' at row 950
+Note	1265	Data truncated for column 'n' at row 952
+Note	1265	Data truncated for column 'n' at row 953
+Note	1265	Data truncated for column 'n' at row 955
+Note	1265	Data truncated for column 'n' at row 956
+Note	1265	Data truncated for column 'n' at row 958
+Note	1265	Data truncated for column 'n' at row 959
+Note	1265	Data truncated for column 'n' at row 961
+Note	1265	Data truncated for column 'n' at row 962
+Note	1265	Data truncated for column 'n' at row 964
+Note	1265	Data truncated for column 'n' at row 965
+Note	1265	Data truncated for column 'n' at row 967
+Note	1265	Data truncated for column 'n' at row 968
+Note	1265	Data truncated for column 'n' at row 970
+Note	1265	Data truncated for column 'n' at row 971
+Note	1265	Data truncated for column 'n' at row 973
+Note	1265	Data truncated for column 'n' at row 974
+Note	1265	Data truncated for column 'n' at row 976
+Note	1265	Data truncated for column 'n' at row 977
+Note	1265	Data truncated for column 'n' at row 979
+Note	1265	Data truncated for column 'n' at row 980
+Note	1265	Data truncated for column 'n' at row 982
+Note	1265	Data truncated for column 'n' at row 983
+Note	1265	Data truncated for column 'n' at row 985
+Note	1265	Data truncated for column 'n' at row 986
+Note	1265	Data truncated for column 'n' at row 988
+Note	1265	Data truncated for column 'n' at row 989
+Note	1265	Data truncated for column 'n' at row 991
+Note	1265	Data truncated for column 'n' at row 992
+Note	1265	Data truncated for column 'n' at row 994
+Note	1265	Data truncated for column 'n' at row 995
+Note	1265	Data truncated for column 'n' at row 997
+Note	1265	Data truncated for column 'n' at row 998
+Note	1265	Data truncated for column 'n' at row 1000
+INSERT INTO t1 VALUES (-5, NULL, NULL, NULL, NULL, NULL, NULL);
+CREATE TABLE t2 (id INT PRIMARY KEY, a INT, b VARCHAR(10), j JSON) ENGINE = InnoDB;
+INSERT INTO t2 VALUES (1, 1, 'a', '{"k": 1}'), (2, 1, 'a', NULL), (3, NULL, 'b', '[1, 2]');
+CREATE TABLE t3 (a INT, b VARCHAR(10)) ENGINE = InnoDB;
+INSERT INTO t3 VALUES (1, 'a'), (1, 'a'), (NULL, 'b');
+include/rpl_sync.inc
+[connection slave]
+CALL mtr.add_suppression("duckdb sync job .* failed: ");
+CALL mtr.add_suppression("duckdb sync job .* loaded 0 of");
+SHOW TABLES FROM test;
+Tables_in_test
+#
+# R1. Load the tables.
+#
+CALL dbms_duckdb.sync_table('test', 't1, t2', 'threads=3');
+JOB_ID	MESSAGE
+#	started loading 2 table(s); see dbms_duckdb.sync_status()
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `id` int NOT NULL,
+  `c` varchar(32) DEFAULT NULL,
+  `d` datetime(3) DEFAULT NULL,
+  `ts` timestamp NULL DEFAULT NULL,
+  `n` decimal(10,2) DEFAULT NULL,
+  `b` varbinary(8) DEFAULT NULL,
+  `e` enum('x','y') DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=DUCKDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+SELECT COUNT(*), COUNT(DISTINCT id), SUM(id) FROM t1;
+COUNT(*)	COUNT(DISTINCT id)	SUM(id)
+1001	1001	500495
+SELECT * FROM t2 ORDER BY id;
+id	a	b	j
+1	1	a	{"k": 1}
+2	1	a	NULL
+3	NULL	b	[1, 2]
+#
+# R2. Changes after the snapshot replicate, DDL included.
+#
+[connection master]
+INSERT INTO t1 (id, c) VALUES (2000, 'after');
+UPDATE t1 SET c = 'updated', id = 3000 WHERE id = 10;
+DELETE FROM t1 WHERE id BETWEEN 100 AND 199;
+ALTER TABLE t2 ADD COLUMN c INT DEFAULT 7;
+INSERT INTO t2 (id, a, b) VALUES (4, 2, 'c');
+include/rpl_sync.inc
+[connection slave]
+CALL dbms_duckdb.sync_status();
+SCHEMA_NAME	TABLE_NAME	STATE	ROWS_LOADED	ROWS_EXPECTED	JOB_ID	STARTED_AT	FINISHED_AT	SNAPSHOT_GTID_SET	LAST_ERROR
+test	t1	ACTIVE	1001	1001	#	#	#	#	
+test	t2	ACTIVE	3	3	#	#	#	#	
+SELECT COUNT(*), COUNT(DISTINCT id), SUM(id) FROM t1;
+COUNT(*)	COUNT(DISTINCT id)	SUM(id)
+902	902	490535
+SELECT * FROM t2 ORDER BY id;
+id	a	b	j	c
+1	1	a	{"k": 1}	7
+2	1	a	NULL	7
+3	NULL	b	[1, 2]	7
+4	2	c	NULL	7
+include/diff_tables.inc [master:t1, slave:t1]
+#
+# Validation errors.
+#
+CALL dbms_duckdb.sync_table('test', 't1', '');
+ERROR HY000: [DuckDB] test.t1 is already synced; use refresh=1 to reload it.
+CALL dbms_duckdb.sync_table('test', 't1', 'bogus=1');
+ERROR HY000: [DuckDB] unknown option 'bogus'.
+CALL dbms_duckdb.sync_table('test', 't1', 'threads=0');
+ERROR HY000: [DuckDB] invalid value '0' for option 'threads'.
+CALL dbms_duckdb.sync_table('mysql', 'user', '');
+ERROR HY000: [DuckDB] system schemas cannot be synced.
+CALL dbms_duckdb.sync_table('test', '', '');
+ERROR HY000: [DuckDB] no tables given.
+CALL dbms_duckdb.sync_table('test', 't1', 'channel=nope');
+ERROR HY000: [DuckDB] replication channel 'nope' is not configured.
+#
+# R3. Reload a synced table.
+#
+CALL dbms_duckdb.sync_table('test', 't1', 'refresh=1');
+JOB_ID	MESSAGE
+#	started loading 1 table(s); see dbms_duckdb.sync_status()
+[connection master]
+INSERT INTO t1 (id) VALUES (4000);
+include/rpl_sync.inc
+[connection slave]
+SELECT COUNT(*), COUNT(DISTINCT id), SUM(id) FROM t1;
+COUNT(*)	COUNT(DISTINCT id)	SUM(id)
+903	903	494535
+include/diff_tables.inc [master:t1, slave:t1]
+#
+# R4. A table missing on the source fails; replication keeps running.
+#
+CALL dbms_duckdb.sync_table('test', 'no_such_table', '');
+JOB_ID	MESSAGE
+#	started loading 1 table(s); see dbms_duckdb.sync_status()
+state: FAILED
+error: source error 1146 (Table 'test.no_such_table' doesn't exist) on: LOCK TABLES `test`.`no_such_table` READ (the replication user needs SELECT and LOCK TABLES on test)
+[connection master]
+INSERT INTO t1 (id) VALUES (5000);
+include/rpl_sync.inc
+[connection slave]
+SELECT COUNT(*) FROM t1 WHERE id = 5000;
+COUNT(*)
+1
+CALL dbms_duckdb.unsync_table('test', 'no_such_table');
+CALL dbms_duckdb.unsync_table('test', 'no_such_table');
+ERROR HY000: [DuckDB] test.no_such_table is not synced.
+CALL dbms_duckdb.sync_table('test', 't3', '');
+JOB_ID	MESSAGE
+#	started loading 1 table(s); see dbms_duckdb.sync_status()
+state: FAILED
+error: test.t3: cannot create local table: This table type requires a primary key
+CALL dbms_duckdb.unsync_table('test', 't3');
+#
+# R5. unsync_table() and adopt=1.
+#
+CALL dbms_duckdb.unsync_table('test', 't2');
+[connection master]
+INSERT INTO t2 (id, a) VALUES (99, 99);
+include/rpl_sync.inc
+[connection slave]
+SELECT COUNT(*) FROM t2 WHERE id = 99;
+COUNT(*)
+0
+CALL dbms_duckdb.sync_table('test', 't2', 'adopt=1');
+JOB_ID	MESSAGE
+0	adopted 1 table(s)
+[connection master]
+INSERT INTO t2 (id, a) VALUES (100, 100);
+include/rpl_sync.inc
+[connection slave]
+SELECT id FROM t2 WHERE id IN (99, 100);
+id
+100
+CALL dbms_duckdb.sync_status();
+SCHEMA_NAME	TABLE_NAME	STATE	ROWS_LOADED	ROWS_EXPECTED	JOB_ID	STARTED_AT	FINISHED_AT	SNAPSHOT_GTID_SET	LAST_ERROR
+test	t1	ACTIVE	902	902	#	#	#	#	
+test	t2	ACTIVE	0	0	#	#	#	#	
+#
+# Cleanup
+#
+CALL dbms_duckdb.unsync_table('test', 't1');
+CALL dbms_duckdb.unsync_table('test', 't2');
+CALL dbms_duckdb.sync_status();
+SCHEMA_NAME	TABLE_NAME	STATE	ROWS_LOADED	ROWS_EXPECTED	JOB_ID	STARTED_AT	FINISHED_AT	SNAPSHOT_GTID_SET	LAST_ERROR
+SET sql_log_bin = 0;
+DROP TABLE IF EXISTS t1, t2, t3;
+Warnings:
+Note	1051	Unknown table 'test.t3'
+SET sql_log_bin = 1;
+[connection master]
+DROP TABLE t1, t2, t3;
+include/rpl_end.inc

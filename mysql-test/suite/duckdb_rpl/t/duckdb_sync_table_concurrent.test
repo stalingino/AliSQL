@@ -1,0 +1,140 @@
+# ==== Purpose ====
+#
+# Changes made on the source while dbms_duckdb.sync_table() runs end up on
+# the replica exactly once, and replication keeps running during the copy.
+#
+# ==== Requirements ====
+#
+# R1. Transactions committed before the snapshot (GTID in the snapshot set)
+#     are in the copied data; the applier skips them although they are still
+#     pending in the relay log. Includes a primary key change and DDL.
+# R2. Transactions committed after the snapshot are applied while the table
+#     is loading (buffered) and merged when the load ends. Includes a primary
+#     key change and rows changed several times.
+# R3. DDL replicated while a table is loading fails that table only; it can
+#     be synced again.
+# R4. Changes buffered while the copy runs are merged too.
+# R5. START REPLICA fails while the job holds the applier stopped.
+
+--source include/have_debug.inc
+--source include/have_debug_sync.inc
+--source include/have_binlog_format_row.inc
+--source include/master-slave.inc
+
+CREATE TABLE t1 (id INT PRIMARY KEY, c VARCHAR(32)) ENGINE = InnoDB;
+INSERT INTO t1
+  WITH RECURSIVE seq(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM seq WHERE i < 100)
+  SELECT i, CONCAT('v', i) FROM seq;
+CREATE TABLE t2 (id INT PRIMARY KEY, c INT) ENGINE = InnoDB;
+INSERT INTO t2 VALUES (1, 1), (2, 2);
+--source include/rpl_sync.inc
+
+--source include/rpl_connection_slave.inc
+CALL mtr.add_suppression("duckdb sync job .* loaded 1 of 2 tables");
+SET @saved_debug = @@GLOBAL.debug;
+SET GLOBAL debug = '+d,duckdb_sync_after_stop_replica,duckdb_sync_after_snapshot,duckdb_sync_before_merge';
+--replace_column 1 #
+CALL dbms_duckdb.sync_table('test', 't1, t2', 'threads=2');
+SET DEBUG_SYNC = 'now WAIT_FOR sync_applier_stopped';
+--echo # The job holds the applier stopped; only the job restarts it.
+--replace_regex /job [0-9]+/job #/
+--error ER_DUCKDB_CLIENT
+START REPLICA SQL_THREAD;
+
+--echo #
+--echo # R1. Before the snapshot, with the replica applier stopped.
+--echo #
+--source include/rpl_connection_master.inc
+INSERT INTO t1 VALUES (101, 'before'), (102, 'before');
+UPDATE t1 SET c = 'before-upd' WHERE id = 5;
+UPDATE t1 SET id = 1006 WHERE id = 6;
+DELETE FROM t1 WHERE id = 7;
+ALTER TABLE t1 ADD COLUMN extra INT DEFAULT 7;
+--source include/sync_slave_io_with_master.inc
+
+SET DEBUG_SYNC = 'now SIGNAL sync_continue_snapshot';
+SET DEBUG_SYNC = 'now WAIT_FOR sync_snapshot_taken';
+
+--echo #
+--echo # R2. After the snapshot. Replication keeps running before the copy.
+--echo #
+--source include/rpl_connection_master.inc
+INSERT INTO t1 (id, c) VALUES (201, 'after');
+UPDATE t1 SET c = 'after-upd' WHERE id = 8;
+UPDATE t1 SET id = 1009 WHERE id = 9;
+DELETE FROM t1 WHERE id = 101;
+UPDATE t1 SET c = 'twice-1' WHERE id = 10;
+UPDATE t1 SET c = 'twice-2' WHERE id = 10;
+INSERT INTO t1 (id, c) VALUES (202, 'gone');
+DELETE FROM t1 WHERE id = 202;
+DELETE FROM t1 WHERE id = 11;
+INSERT INTO t1 (id, c) VALUES (11, 'again');
+UPDATE t2 SET c = 20 WHERE id = 2;
+--source include/rpl_sync.inc
+
+--source include/rpl_connection_slave.inc
+--echo # The copy has not started yet: the tables are still empty.
+SELECT COUNT(*) FROM t1;
+SELECT COUNT(*) FROM t2;
+SET DEBUG_SYNC = 'now SIGNAL sync_continue_load';
+SET DEBUG_SYNC = 'now WAIT_FOR sync_copied';
+
+--echo #
+--echo # R3, R4. After the copy, before the merge.
+--echo #
+--source include/rpl_connection_master.inc
+UPDATE t1 SET c = 'copied' WHERE id = 13;
+DELETE FROM t1 WHERE id = 14;
+ALTER TABLE t2 ADD COLUMN d INT;
+INSERT INTO t2 VALUES (3, 3, 3);
+--source include/rpl_sync.inc
+--source include/rpl_connection_slave.inc
+--echo # Buffered, not yet in the table.
+SELECT * FROM t1 WHERE id IN (13, 14) ORDER BY id;
+SET DEBUG_SYNC = 'now SIGNAL sync_continue_merge';
+--let $sync_row = 1
+--source suite/duckdb_rpl/include/wait_sync_table.inc
+--let $sync_row = 2
+--source suite/duckdb_rpl/include/wait_sync_table.inc
+SET GLOBAL debug = @saved_debug;
+SET DEBUG_SYNC = 'RESET';
+
+--source include/rpl_connection_master.inc
+UPDATE t1 SET c = 'after-merge' WHERE id = 12;
+--source include/rpl_sync.inc
+--source include/rpl_connection_slave.inc
+SHOW CREATE TABLE t1;
+SELECT COUNT(*), COUNT(DISTINCT id) FROM t1;
+SELECT * FROM t1 WHERE id IN (1, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 101, 102,
+                              201, 202, 1006, 1009) ORDER BY id;
+--let $test_duckdb = 1
+--let $diff_tables = master:t1, slave:t1
+--source include/diff_tables.inc
+--replace_column 6 # 7 # 8 # 9 #
+CALL dbms_duckdb.sync_status();
+
+--echo #
+--echo # R3. Sync t2 again.
+--echo #
+--replace_column 1 #
+CALL dbms_duckdb.sync_table('test', 't2', '');
+--let $sync_row = 2
+--source suite/duckdb_rpl/include/wait_sync_table.inc
+--echo state: $sync_state
+--source include/rpl_connection_master.inc
+INSERT INTO t2 VALUES (4, 4, 4);
+--source include/rpl_sync.inc
+--source include/rpl_connection_slave.inc
+SELECT * FROM t2 ORDER BY id;
+
+--echo #
+--echo # Cleanup
+--echo #
+CALL dbms_duckdb.unsync_table('test', 't1');
+CALL dbms_duckdb.unsync_table('test', 't2');
+SET sql_log_bin = 0;
+DROP TABLE t1, t2;
+SET sql_log_bin = 1;
+--source include/rpl_connection_master.inc
+DROP TABLE t1, t2;
+--source include/rpl_end.inc
