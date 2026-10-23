@@ -9,9 +9,9 @@
 #   OpenSSL 1.0.2 made the binaries need libssl.so.10, which current
 #   distributions no longer ship. ncurses 5, which the mysql client needs, is
 #   bundled there too.
-# - The embedded DuckDB gets its real platform and version. Without them it
-#   reports platform '"linux"' and version v0.0.1, and refuses to load
-#   extensions built for linux_amd64 / linux_arm64.
+# - The embedded DuckDB gets its real platform. Without it DuckDB reports
+#   platform '"linux"' and refuses to load extensions built for linux_amd64 /
+#   linux_arm64. Its version comes from cmake/duckdb.cmake (DUCKDB_GIT_DESCRIBE).
 #
 # The x86_64 tarball is also published as an RPM (job rpm, .github/rpm: /opt/alisql,
 # systemd service alisql, config /etc/alisql/my.cnf), smoke-tested on Oracle Linux 7
@@ -36,8 +36,6 @@ env:
   # --page-size, which CMake passes on aarch64). SHA-256 of the release's .tar.bz2.
   PATCHELF_VERSION: 0.18.0
   PATCHELF_SHA256: 1952b2a782ba576279c211ee942e341748fdb44997f704dd53def46cd055470b
-  # DuckDB release vendored in extra/duckdb (src/storage/version_map.json). Bump with it.
-  DUCKDB_VERSION: v1.4.4
 
 concurrency:
   group: build-master
@@ -74,7 +72,6 @@ jobs:
             -e OPENSSL_VERSION \
             -e PATCHELF_VERSION \
             -e PATCHELF_SHA256 \
-            -e DUCKDB_VERSION \
             oraclelinux:7 \
             bash -ex <<'INNER'
 
@@ -125,11 +122,17 @@ jobs:
           grep -q '^    -DMYSQL_SERVER_SUFFIX="$server_suffix"$' build.sh
           sed -i 's#^    -DMYSQL_SERVER_SUFFIX="$server_suffix"$#&\n    -DWITH_SSL=/opt/openssl#' build.sh
           grep -q '^    -DWITH_SSL=/opt/openssl$' build.sh
-          # extra/duckdb/Makefile passes these to DuckDB's CMake (DUCKDB_EXPLICIT_PLATFORM,
-          # OVERRIDE_GIT_DESCRIBE). The tree has no DuckDB git tags to derive them from.
+          # extra/duckdb/Makefile passes this to DuckDB's CMake (DUCKDB_EXPLICIT_PLATFORM).
+          # The version is pinned by cmake/duckdb.cmake (OVERRIDE_GIT_DESCRIBE).
           case "$(uname -m)" in x86_64) DUCKDB_ARCH=amd64 ;; aarch64) DUCKDB_ARCH=arm64 ;; esac
           export DUCKDB_PLATFORM="linux_${DUCKDB_ARCH}"
-          export OVERRIDE_GIT_DESCRIBE="${DUCKDB_VERSION}"
+          # The version DuckDB's CMake derives from that describe: vX.Y.Z on a tag, else
+          # vX.Y.(Z+1)-devN.
+          DUCKDB_DESCRIBE=$(sed -n 's/^SET(DUCKDB_GIT_DESCRIBE "\(.*\)")$/\1/p' cmake/duckdb.cmake)
+          [ -n "$DUCKDB_DESCRIBE" ]
+          IFS=.- read -r DD_MAJ DD_MIN DD_PAT DD_DEV _ <<<"${DUCKDB_DESCRIBE#v}"
+          if [ "$DD_DEV" = 0 ]; then DUCKDB_VERSION="v${DD_MAJ}.${DD_MIN}.${DD_PAT}"
+          else DUCKDB_VERSION="v${DD_MAJ}.${DD_MIN}.$((DD_PAT + 1))-dev${DD_DEV}"; fi
 
           sh build.sh -t release -d /opt/alisql
           make install
@@ -174,7 +177,7 @@ jobs:
           platform=$($M "CALL dbms_duckdb.query('PRAGMA platform')")
           version=$($M "CALL dbms_duckdb.query('SELECT version()')")
           echo "$platform" | grep -q "linux_$1"
-          echo "$version" | grep -q "$2"
+          echo "$version" | grep -qF "$2"
           /opt/alisql/bin/mysqladmin -uroot -S "$D/mysql.sock" shutdown
           CHECK
           su mtr -c "bash /tmp/duckdb-identity.sh ${DUCKDB_ARCH} ${DUCKDB_VERSION}"
