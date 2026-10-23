@@ -286,7 +286,10 @@ jobs:
           git fetch --filter=blob:none https://github.com/alibaba/AliSQL.git master
           UPSTREAM=$(git rev-parse FETCH_HEAD)
           SHORT="${GITHUB_SHA:0:7}"
-          TAG="build-${SHORT}"
+          # AliSQL-8.0.44-fork.<n>: n counts up from the newest fork release.
+          LAST=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName' |
+                 sed -n 's/^AliSQL-8\.0\.44-fork\.\([0-9][0-9]*\)$/\1/p' | sort -n | tail -1)
+          TAG="AliSQL-8.0.44-fork.$(( ${LAST:-0} + 1 ))"
           NOTES="${RUNNER_TEMP}/notes.md"
           {
             echo "AliSQL built from \`master\` at ${GITHUB_SHA}: upstream master ${UPSTREAM:0:7} plus"
@@ -304,11 +307,11 @@ jobs:
 
           gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null || true
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --prerelease --title "AliSQL 8.0.44-g${SHORT}" --notes-file "$NOTES" artifacts/alisql-*.tar.xz artifacts/alisql-*.rpm
+            --prerelease --title "AliSQL 8.0.44 fork ${TAG##*.} (${SHORT})" --notes-file "$NOTES" artifacts/alisql-*.tar.xz artifacts/alisql-*.rpm
 
-          # Keep the five newest builds.
+          # Keep the five newest builds (the old build-<sha> tags count as builds too).
           gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
-            --jq '[.[] | select(.tagName | startswith("build-"))] | sort_by(.createdAt) | reverse | .[5:] | .[].tagName' |
+            --jq '[.[] | select(.tagName | test("^(build-|AliSQL-8\\.0\\.44-fork\\.)"))] | sort_by(.createdAt) | reverse | .[5:] | .[].tagName' |
           while read -r old; do
             gh release delete "$old" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
           done
