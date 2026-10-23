@@ -126,13 +126,7 @@ jobs:
           # The version is pinned by cmake/duckdb.cmake (OVERRIDE_GIT_DESCRIBE).
           case "$(uname -m)" in x86_64) DUCKDB_ARCH=amd64 ;; aarch64) DUCKDB_ARCH=arm64 ;; esac
           export DUCKDB_PLATFORM="linux_${DUCKDB_ARCH}"
-          # The version DuckDB's CMake derives from that describe: vX.Y.Z on a tag, else
-          # vX.Y.(Z+1)-devN.
-          DUCKDB_DESCRIBE=$(sed -n 's/^SET(DUCKDB_GIT_DESCRIBE "\(.*\)")$/\1/p' cmake/duckdb.cmake)
-          [ -n "$DUCKDB_DESCRIBE" ]
-          IFS=.- read -r DD_MAJ DD_MIN DD_PAT DD_DEV _ <<<"${DUCKDB_DESCRIBE#v}"
-          if [ "$DD_DEV" = 0 ]; then DUCKDB_VERSION="v${DD_MAJ}.${DD_MIN}.${DD_PAT}"
-          else DUCKDB_VERSION="v${DD_MAJ}.${DD_MIN}.$((DD_PAT + 1))-dev${DD_DEV}"; fi
+          DUCKDB_VERSION=$(bash .github/scripts/duckdb-version.sh)
 
           sh build.sh -t release -d /opt/alisql
           make install
@@ -289,6 +283,7 @@ jobs:
           git fetch --filter=blob:none https://github.com/alibaba/AliSQL.git master
           UPSTREAM=$(git rev-parse FETCH_HEAD)
           SHORT="${GITHUB_SHA:0:7}"
+          DUCKDB_VERSION=$(bash .github/scripts/duckdb-version.sh)
           # AliSQL-8.0.44-fork.<n>: n counts up from the newest fork release.
           LAST=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName' |
                  sed -n 's/^AliSQL-8\.0\.44-fork\.\([0-9][0-9]*\)$/\1/p' | sort -n | tail -1)
